@@ -1,0 +1,39 @@
+# TORRE ELEMENTAL — juego + microservicios
+# docker compose up --build
+#   juego  → http://localhost:8090          (nginx: juego + proxy /api)
+#   mapas  → interno :8081                  (API de mapas)
+#   scores → interno :8082                  (API de clasificación)
+
+services:
+  juego:
+    image: nginx:alpine
+    container_name: torre-elemental-juego
+    ports:
+      - "8090:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - mapas
+      - clasificacion
+    restart: unless-stopped
+
+  mapas:
+    build: ./services/maps
+    container_name: torre-elemental-mapas
+    environment:
+      PORT: "8081"
+    restart: unless-stopped
+
+  clasificacion:
+    build: ./services/leaderboard
+    container_name: torre-elemental-clasificacion
+    environment:
+      PORT: "8082"
+      DATA: /data/scores.json
+    volumes:
+      - scores-data:/data
+    restart: unless-stopped
+
+volumes:
+  scores-data:

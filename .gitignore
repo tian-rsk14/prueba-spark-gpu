@@ -1,0 +1,26 @@
+# Herramientas / configuración local de agente
+.opencode/
+
+# Dependencias (defensivo: hoy no hay npm)
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# Datos de runtime (persisten en volumen Docker, nunca en el repo)
+scores.json
+
+# Logs
+*.log
+logs/
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Temporales
+*.tmp
+*.swp
+
+# Biblioteca de skills y lockfile del agente
+.claude/
+skills-lock.json
