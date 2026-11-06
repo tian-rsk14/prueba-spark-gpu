@@ -1,82 +1,137 @@
-// Microservicio Clasificación — top 10 persistente (Node puro, sin dependencias).
+// Microservicio Clasificación — v2, persistencia en MongoDB.
+// Contrato HTTP idéntico a v1:
+//   POST /      {name, score, map}     → 201 {ok:true, rank}
+//   GET /top    ?limit&map             → 200 [{rank, name, score, map, date}]
+//   GET /|/health (estado)             → 200 {ok:true, servicio, total}
+// Conexión perezosa y tolerante: si Mongo no está disponible, el proceso
+// no muere; se registra el error y se responde (degradación elegante).
 'use strict';
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const PORT = process.env.PORT || 8082;
-const DATA = process.env.DATA || path.join(__dirname, 'scores.json');
+const { MongoClient } = require('mongodb');
 
-function load() {
-  try {
-    const arr = JSON.parse(fs.readFileSync(DATA, 'utf8'));
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) { return []; }
-}
-function save(list) {
-  try { fs.writeFileSync(DATA, JSON.stringify(list, null, 1)); }
-  catch (e) { console.error('no se pudo persistir:', e.message); }
+const PORT = parseInt(process.env.PORT, 10) || 8082;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/torre_elemental';
+const DB_NAME = 'torre_elemental';
+const COLLECTION = 'scores';
+
+// Sin conexión inicial: el driver conecta bajo demanda con timeout de 5 s.
+const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+const scores = client.db(DB_NAME).collection(COLLECTION);
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+};
+function json(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...cors });
+  res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
-function rankOf(list, rec) { return list.indexOf(rec) + 1; }
+// El juego envía los campos heredados {n, m, sc}; se aceptan ambas notaciones.
+function pick(obj, keys) {
+  for (const k of keys) if (obj[k] !== undefined) return obj[k];
+  return undefined;
+}
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://local');
-  const cors = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
-  };
+
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
 
   if (req.method === 'GET') {
     if (u.pathname === '/top') {
-      const list = load();
-      let out = list;
-      const m = u.searchParams.get('map');
-      if (m) out = out.filter(s => s.m === m);
-      const limit = Math.min(Math.max(parseInt(u.searchParams.get('limit') || '10', 10) || 10, 1), 100);
-      out = out.slice().sort((a, b) => b.sc - a.sc).slice(0, limit);
-      res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
-      res.end(JSON.stringify(out));
+      const rawLimit = parseInt(u.searchParams.get('limit') || '10', 10);
+      const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 10, 1), 100);
+      const map = u.searchParams.get('map');
+      const filter = map ? { map } : {};
+      (async () => {
+        try {
+          const docs = await scores.find(filter).sort({ score: -1 }).limit(limit).toArray();
+          // Aliases heredados (n, sc, m) para que el juego siga renderizando igual.
+          json(res, 200, docs.map((d, i) => ({
+            rank: i + 1,
+            name: d.name,
+            score: d.score,
+            map: d.map,
+            date: (d.date instanceof Date ? d.date : new Date(d.date)).toISOString(),
+            n: d.name,
+            sc: d.score,
+            m: d.map
+          })));
+        } catch (e) {
+          console.error('no se pudo leer el top (¿Mongo disponible?):', e.message);
+          json(res, 200, '[]'); // degradación elegante, igual que v1 sin fichero
+        }
+      })();
       return;
     }
     if (u.pathname === '/' || u.pathname === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
-      res.end(JSON.stringify({ ok: true, servicio: 'clasificacion', total: load().length }));
+      (async () => {
+        let total = 0;
+        try { total = await scores.countDocuments(); }
+        catch (e) { console.error('no se pudo contar (¿Mongo disponible?):', e.message); }
+        json(res, 200, { ok: true, servicio: 'clasificacion', total });
+      })();
       return;
     }
   }
 
   if (req.method === 'POST' && u.pathname === '/') {
     let raw = '';
-    req.on('data', c => { raw += c; if (raw.length > 4096) req.destroy(); });
-    req.on('end', () => {
+    let done = false;
+    req.on('data', (c) => {
+      if (done) return;
+      raw += c;
+      if (raw.length > 1024) { // máximo 1 KB
+        done = true;
+        json(res, 413, { ok: false, error: 'cuerpo demasiado grande' });
+        req.destroy();
+      }
+    });
+    req.on('error', () => { /* socket cortado: ignorar */ });
+    req.on('end', async () => {
+      if (done) return;
       let s;
       try { s = JSON.parse(raw || '{}'); }
-      catch (e) { res.writeHead(400, { 'Content-Type': 'application/json', ...cors }); res.end(JSON.stringify({ error: 'json inválido' })); return; }
-      const rec = {
-        n: String(s.n || 'Anónimo').replace(/[<>]/g, '').slice(0, 14) || 'Anónimo',
-        m: String(s.m || ''),
-        sc: Math.max(0, Math.round(Number(s.sc) || 0)),
-        w: Math.round(Number(s.w) || 0),
-        k: Math.round(Number(s.k) || 0),
-        v: Math.round(Number(s.v) || 0),
-        g: Math.round(Number(s.g) || 0),
-        ts: Date.now()
-      };
-      const list = load();
-      list.push(rec);
-      list.sort((a, b) => b.sc - a.sc);
-      const top = list.slice(0, 200); // retenemos los 200 mejores
-      save(top);
-      res.writeHead(201, { 'Content-Type': 'application/json', ...cors });
-      res.end(JSON.stringify({ ok: true, rank: rankOf(top, rec), sc: rec.sc }));
+      catch (e) { json(res, 400, { ok: false, error: 'json inválido' }); return; }
+      if (typeof s !== 'object' || s === null || Array.isArray(s)) {
+        json(res, 400, { ok: false, error: 'json inválido' }); return;
+      }
+
+      const name = pick(s, ['name', 'n']);
+      if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 24) {
+        json(res, 400, { ok: false, error: 'nombre inválido' }); return;
+      }
+      const score = pick(s, ['score', 'sc']);
+      if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1e9) {
+        json(res, 400, { ok: false, error: 'score inválido' }); return;
+      }
+      const mapRaw = pick(s, ['map', 'm']);
+      let map;
+      if (mapRaw === undefined || mapRaw === null ||
+          (typeof mapRaw === 'string' && mapRaw.trim() === '')) {
+        map = 'pradera'; // default si falta (el juego envía '' si no hay mapa)
+      } else if (typeof mapRaw !== 'string' || mapRaw.trim().length > 64) {
+        json(res, 400, { ok: false, error: 'mapa inválido' }); return;
+      } else {
+        map = mapRaw.trim();
+      }
+
+      try {
+        // Documento restringido a 4 campos: {name, score, map, date}
+        await scores.insertOne({ name: name.trim(), score, map, date: new Date() });
+        const rank = (await scores.countDocuments({ score: { $gt: score } })) + 1;
+        json(res, 201, { ok: true, rank });
+      } catch (e) {
+        console.error('no se pudo insertar la puntuación (¿Mongo disponible?):', e.message);
+        json(res, 500, { ok: false, error: 'servidor' }); // misma política de errores v1
+      }
     });
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json', ...cors });
-  res.end(JSON.stringify({ error: 'no encontrado' }));
+  json(res, 404, { error: 'no encontrado' });
 });
 
 server.listen(PORT, () => console.log('microservicio clasificacion en http://0.0.0.0:' + PORT));

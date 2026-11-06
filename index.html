@@ -1055,21 +1055,27 @@ const ENEMIES={
   dragon:{name:'Dragón Anciano',hp:3200,spd:24,armor:6,bounty:250,leak:5,boss:true,spr:'e_dragon',color:'#e05a3a',resist:{fire:0.3}},
 };
 
-// ---------- sinergias ----------
+// ---------- sinergias (fusionan los ataques en uno nuevo) ----------
 const SYN_RANGE=40; // 2.5 celdas
 const SYNERGIES=[
   {id:'comb',a:'fire',b:'poison',name:'Combustión',color:'#ff9d3c',
-   desc:'El fuego aplica veneno y el veneno aplica quemadura.'},
+   fuses:{fire:'Bomba Nefasta',poison:'Nube Incendiaria'},
+   desc:'Fuego→Bomba Nefasta: área + quemadura + veneno. Veneno→Nube Incendiaria: veneno que también quema.'},
   {id:'storm',a:'ice',b:'lightning',name:'Tormenta Glacial',color:'#8fd4ff',
-   desc:'Rayos: +50% daño a ralentizados y congelan 0.4s.'},
+   fuses:{ice:'Rayo Glacial',lightning:'Cadena Glacial'},
+   desc:'Hielo→Rayo Glacial: rayo instantáneo con destello helado en área. Rayo→Cadena Glacial: congela y +50% a ralentizados.'},
   {id:'bless',a:'physical',b:'holy',name:'Bendición',color:'#ffe08a',
-   desc:'Flechas: +40% daño y cuentan como sagradas vs no-muertos.'},
+   fuses:{physical:'Flecha Sagrada',holy:'Juicio Radiante'},
+   desc:'Flecha→Flecha Sagrada: daño sagrado, x3 vs no-muertos. Sagrada→Juicio Radiante: stún 0.4s y área.'},
   {id:'necrosis',a:'ice',b:'poison',name:'Necrosis',color:'#a8e05a',
-   desc:'El veneno hace 2x daño mientras el objetivo va ralentizado.'},
+   fuses:{ice:'Fragmento Nigromántico',poison:'Vial Glacial'},
+   desc:'Hielo→Fragmento Nigromántico: ralentiza y envenena. Veneno→Vial Glacial: ralentiza y al matar congela a los vecinos.'},
   {id:'ember',a:'fire',b:'siege',name:'Bombardeo Incendiario',color:'#ff6b3c',
-   desc:'Las rocas de la catapulta explotan con quemadura.'},
+   fuses:{fire:'Bomba Volcánica',siege:'Roca Ígnea'},
+   desc:'Fuego→Bomba Volcánica: explosión que deja charco de lava. Catapulta→Roca Ígnea: empuje + quemadura.'},
   {id:'frost',a:'physical',b:'ice',name:'Flechas Heladas',color:'#b8ecff',
-   desc:'Las flechas ralentizan un 30% durante 1.5s.'},
+   fuses:{physical:'Flecha Glacial',ice:'Lanza Glacial'},
+   desc:'Flecha→Flecha Glacial: daño helado que ralentiza. Hielo→Lanza Glacial: lanza con ralentizante reforzado.'},
 ];
 function synIds(elems){
   const out=[];
@@ -1108,7 +1114,7 @@ const G={
   phase:'menu', // menu | idle | wave | over | win
   gold:130, lives:20, wave:0,
   maps:MAP_LIST, mapSel:0, // selección de mapa en el menú
-  enemies:[], towers:[], shots:[], fx:[], parts:[], floats:[],
+  enemies:[], towers:[], shots:[], fx:[], parts:[], floats:[], pools:[],
   spawnQueue:[], waveTime:0, time:0,
   speed:1, paused:false,
   buildType:null, selTower:null, mouse:{x:-99,y:-99,c:-1,r:-1},
@@ -1182,6 +1188,10 @@ function applyBurn(e,dps,t){
 function applySlow(e,f,t){
   if(e.dead)return;
   if(f>=e.slowF){e.slowF=f;e.slowT=t;}else if(e.slowT<=0){e.slowF=f;e.slowT=t;}
+}
+function spawnPool(x,y,r,dps,t){
+  if(G.pools.length>=6)G.pools.shift();
+  G.pools.push({x,y,r,dps,t,t0:t});
 }
 
 // ---------- oleadas ----------
@@ -1359,25 +1369,54 @@ function leadPos(e,T){
 }
 function fireTower(t,e){
   const d=TOWERS[t.type], lv=d.lv[t.lvl-1];
+  const syn=(t.syn&&t.syn.length)?t.syn[0]:null; // sinergia prioritaria → ataque fusionado
   switch(t.type){
     case 'archer':{
-      let opts={float:true};
-      if(hasSyn(t,'bless')&&e.undead)opts={float:true,mult:1.4*2,elemOverride:'holy'};
-      else if(hasSyn(t,'bless'))opts={float:true,mult:1.4};
-      if(hasSyn(t,'frost'))opts.slow={f:0.3,t:1.5};
-      G.shots.push({kind:'arrow',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:230,dmg:lv.dmg,elem:'physical',opts,lvl:t.lvl,t:0,life:1.2});
-      if(t.lvl>=3){
-        G.shots.push({kind:'arrow',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:230,dmg:lv.dmg,elem:'physical',opts:t.lvl>=3?opts:{},lvl:3,t:0,life:1.2,delay:0.07});
-      }
-      SFX.shootA();
+      let kind='arrow',elem='physical',opts={float:true},sfx=SFX.shootA;
+      if(syn&&syn.id==='bless'){kind='holyarrow';elem='holy';opts={float:true,mult:e.undead?3:1.5};sfx=SFX.zap;}
+      else if(syn&&syn.id==='frost'){kind='frostarrow';elem='ice';opts={float:true,slow:{f:0.35,t:1.8}};sfx=SFX.ice;}
+      const mk=(delay)=>G.shots.push({kind,x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:230,dmg:lv.dmg,elem,opts,lvl:t.lvl,t:0,life:1.2,delay});
+      mk(0);
+      if(t.lvl>=3)mk(0.07);
+      sfx();
       break;}
     case 'fire':{
-      G.shots.push({kind:'fireball',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:lv.splash,burn:lv.burn},lvl:t.lvl,t:0,life:1.6});
+      if(syn&&syn.id==='comb'){
+        G.shots.push({kind:'toxbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+4,burn:lv.burn,poison:{dps:8,t:3,stacks:1}},lvl:t.lvl,t:0,life:1.6});
+      }else if(syn&&syn.id==='ember'){
+        G.shots.push({kind:'volcbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+6,burn:lv.burn,pool:{r:30,dps:9,t:3}},lvl:t.lvl,t:0,life:1.6});
+      }else{
+        G.shots.push({kind:'fireball',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:lv.splash,burn:lv.burn},lvl:t.lvl,t:0,life:1.6});
+      }
       SFX.fire();
       break;}
     case 'ice':{
-      G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow},lvl:t.lvl,t:0,life:1.4});
-      SFX.ice();
+      if(syn&&syn.id==='storm'){
+        // Rayo Glacial: rayo instantáneo con destello helado en área
+        G.fx.push({type:'frostbolt',pts:[[t.x,t.y-12],[e.x,e.y]],t:0,dur:0.16,lvl:t.lvl});
+        applyDamage(e,lv.dmg,'ice');
+        if(!e.dead){applySlow(e,0.5,2.2);e.freeze=Math.max(e.freeze,0.5);}
+        for(const o of G.enemies){
+          if(o===e||o.dead||o.leaked)continue;
+          if(Math.hypot(o.x-e.x,o.y-e.y)<=26){
+            applyDamage(o,lv.dmg*0.5,'ice',{armor:false});
+            if(!o.dead)o.freeze=Math.max(o.freeze,0.3);
+          }
+        }
+        burst(e.x,e.y,'#b8ecff',10,32,0.3);
+        ring(e.x,e.y,2,22,'#8fd4ff');
+        SFX.zap();
+      }else if(syn&&syn.id==='necrosis'){
+        G.shots.push({kind:'necroshard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow,poison:{dps:6,t:3,stacks:1}},lvl:t.lvl,t:0,life:1.4});
+        SFX.ice();
+      }else if(syn&&syn.id==='frost'){
+        // Lanza Glacial: ralentizante reforzado
+        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:{f:lv.slow.f+0.1,t:lv.slow.t+0.6},lance:true},lvl:t.lvl,t:0,life:1.4});
+        SFX.ice();
+      }else{
+        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow},lvl:t.lvl,t:0,life:1.4});
+        SFX.ice();
+      }
       break;}
     case 'bolt':{
       // cadena instantánea
@@ -1393,7 +1432,7 @@ function fireTower(t,e){
         if(!best)break;
         chain.push(best);
       }
-      const storm=hasSyn(t,'storm');
+      const storm=!!(syn&&syn.id==='storm'); // Cadena Glacial
       const pts=[[t.x,t.y-12]];
       for(const o of chain){
         const a=pts[pts.length-1];
@@ -1402,28 +1441,33 @@ function fireTower(t,e){
         const nl=Math.hypot(nx,ny)||1,j=ri(-4,4);
         pts.push([mx+nx/nl*j,my+ny/nl*j],[o.x,o.y]);
       }
-      G.fx.push({type:'bolt',pts,t:0,dur:0.14,lvl:t.lvl});
+      G.fx.push({type:'bolt',pts,t:0,dur:0.14,lvl:t.lvl,ice:storm});
       for(const o of chain){
         const slowTarget=o.slowT>0||o.freeze>0;
         applyDamage(o,lv.dmg,'lightning',{mult:storm&&slowTarget?1.5:1});
-        if(storm)o.freeze=Math.max(o.freeze,0.4);
-        burst(o.x,o.y,'#c0a8ff',2+t.lvl*2,26,0.2);
+        if(storm)o.freeze=Math.max(o.freeze,0.45);
+        burst(o.x,o.y,storm?'#b8ecff':'#c0a8ff',2+t.lvl*2,26,0.2);
       }
       SFX.zap();
       break;}
     case 'poison':{
       const p=leadPos(e,0.55);
-      G.shots.push({kind:'vial',x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts:{poison:lv.poison,splash:lv.splash||0},lvl:t.lvl,h0:14});
+      let kind='vial',opts={poison:lv.poison,splash:lv.splash||0};
+      if(syn&&syn.id==='comb'){opts.burn={dps:6,t:3};} // Nube Incendiaria
+      else if(syn&&syn.id==='necrosis'){kind='frostvial';opts.slow={f:0.35,t:1.8};opts.frostBoom=true;} // Vial Glacial
+      G.shots.push({kind,x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts,lvl:t.lvl,h0:14});
       SFX.poison();
       break;}
     case 'siege':{
       const p=leadPos(e,0.8);
-      G.shots.push({kind:'rock',x:t.x,y:t.y-10,sx:t.x,sy:t.y-10,tx:p.x,ty:p.y,t:0,t0:0.8,dmg:lv.dmg,elem:'siege',opts:{splash:lv.splash,kb:lv.kb,ember:hasSyn(t,'ember')},lvl:t.lvl,h0:22});
+      const ember=!!(syn&&syn.id==='ember'); // Roca Ígnea
+      G.shots.push({kind:'rock',x:t.x,y:t.y-10,sx:t.x,sy:t.y-10,tx:p.x,ty:p.y,t:0,t0:0.8,dmg:lv.dmg,elem:'siege',opts:{splash:lv.splash,kb:lv.kb,ember,burn:ember?{dps:6,t:3.5}:undefined},lvl:t.lvl,h0:22});
       tone(120,0.15,'triangle',0.07,-40);
       break;}
     case 'holy':{
-      const mult=e.undead?(t.lvl>=3?2.5:2):1;
-      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:lv.splash||0},lvl:t.lvl,t:0,life:1.4});
+      const bless=!!(syn&&syn.id==='bless'); // Juicio Radiante
+      const mult=e.undead?(bless?3:(t.lvl>=3?2.5:2)):(bless?1.5:1);
+      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:bless?260:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:lv.splash||0,stun:bless?0.4:0},lvl:t.lvl,t:0,life:1.4});
       SFX.holy();
       break;}
   }
@@ -1486,7 +1530,7 @@ function updateTower(t,dt){
 function updateShot(s,dt){
   s.t+=dt;
   if(s.delay){s.delay-=dt;if(s.delay>0)return;}
-  if(s.kind==='rock'||s.kind==='vial'){
+  if(s.kind==='rock'||s.kind==='vial'||s.kind==='frostvial'){
     const k=s.t/s.t0;
     if(k>=1){
       impact(s);
@@ -1496,6 +1540,12 @@ function updateShot(s,dt){
     s.x=lerp(s.sx,s.tx,k);
     s.y=lerp(s.sy,s.ty,k);
     s.h=4*s.h0*k*(1-k);
+    if(s.kind==='rock'&&s.opts&&s.opts.ember&&Math.random()<dt*22){
+      G.parts.push({x:s.x,y:s.y,vx:ri(-6,6),vy:ri(-12,-2),life:0.35,max:0.35,color:Math.random()<0.5?'#ff7a1a':'#ffd23e',size:1,grav:0});
+    }
+    if(s.kind==='frostvial'&&Math.random()<dt*14){
+      G.parts.push({x:s.x,y:s.y,vx:ri(-6,6),vy:ri(-8,8),life:0.25,max:0.25,color:'#b8ecff',size:1,grav:0});
+    }
     return;
   }
   // homing: arrow, shard, orb, fireball
@@ -1511,11 +1561,14 @@ function updateShot(s,dt){
   s.y+=dy/d*s.spd*dt;
   s.ang=Math.atan2(dy,dx);
   const L=s.lvl||1;
-  if(s.kind==='fireball'&&Math.random()<dt*(14+16*L)){
-    G.parts.push({x:s.x,y:s.y,vx:ri(-8,8),vy:ri(-10,4),life:0.3,max:0.3,color:'#ff7a1a',size:L>=3?2:1,grav:0});
+  if((s.kind==='fireball'||s.kind==='toxbomb'||s.kind==='volcbomb')&&Math.random()<dt*(14+16*L)){
+    G.parts.push({x:s.x,y:s.y,vx:ri(-8,8),vy:ri(-10,4),life:0.3,max:0.3,color:s.kind==='toxbomb'?'#7ac74a':'#ff7a1a',size:L>=3?2:1,grav:0});
   }
-  if(s.kind==='shard'&&Math.random()<dt*(6+8*L)){
-    G.parts.push({x:s.x,y:s.y,vx:ri(-8,8),vy:ri(-8,8),life:0.25,max:0.25,color:'#b8ecff',size:1,grav:0});
+  if((s.kind==='shard'||s.kind==='necroshard')&&Math.random()<dt*(6+8*L)){
+    G.parts.push({x:s.x,y:s.y,vx:ri(-8,8),vy:ri(-8,8),life:0.25,max:0.25,color:s.kind==='necroshard'?'#a8e05a':'#b8ecff',size:1,grav:0});
+  }
+  if((s.kind==='frostarrow'||s.kind==='holyarrow')&&Math.random()<dt*12){
+    G.parts.push({x:s.x,y:s.y,vx:ri(-4,4),vy:ri(-4,4),life:0.2,max:0.2,color:s.kind==='frostarrow'?'#b8ecff':'#ffe08a',size:1,grav:0});
   }
   if(s.kind==='orb'&&Math.random()<dt*(10+10*L)){
     G.parts.push({x:s.x,y:s.y,vx:ri(-6,6),vy:ri(-6,6),life:0.25,max:0.25,color:'#fff2c0',size:L>=3?2:1,grav:0});
@@ -1526,54 +1579,74 @@ function impact(s){
   const o=s.opts||{};
   const elem=o.elemOverride||s.elem;
   const L=s.lvl||1; // escalado visual por nivel de torre
-  if(s.kind==='arrow'){
+  if(s.kind==='arrow'||s.kind==='holyarrow'||s.kind==='frostarrow'){
+    const tx=s.target?s.target.x:s.x, ty=s.target?s.target.y:s.y;
     if(s.target&&!s.target.dead)applyDamage(s.target,s.dmg,elem,{mult:o.mult});
     if(o.slow&&s.target&&!s.target.dead)applySlow(s.target,o.slow.f,o.slow.t);
-    burst(s.target?s.target.x:s.x,s.target?s.target.y:s.y,L>=3?'#ffd23e':'#e8e8d8',L,22,0.2);
+    const bc=s.kind==='holyarrow'?'#ffe08a':s.kind==='frostarrow'?'#b8ecff':(L>=3?'#ffd23e':'#e8e8d8');
+    burst(tx,ty,bc,L+1,22,0.2);
+    if(s.kind==='holyarrow')ring(tx,ty,1,8,'#ffe08a');
     return;
   }
   const x=s.x,y=s.y;
-  if(s.kind==='fireball'){
+  if(s.kind==='fireball'||s.kind==='toxbomb'||s.kind==='volcbomb'){
     SFX.boom();
-    ring(x,y,1+L,12+4*L,'#ff7a1a');
+    ring(x,y,1+L,12+4*L,s.kind==='toxbomb'?'#7ac74a':'#ff7a1a');
     burst(x,y,'#ff7a1a',10+4*L,44,0.4);
-    burst(x,y,'#ffe08a',5+3*L,30,0.3);
+    if(s.kind==='toxbomb')burst(x,y,'#7ac74a',6+3*L,36,0.4);
+    else if(s.kind==='volcbomb')burst(x,y,'#ffd23e',5+3*L,34,0.35);
+    else burst(x,y,'#ffe08a',5+3*L,30,0.3);
     for(const e of G.enemies){
       if(e.dead||e.leaked)continue;
       if(Math.hypot(e.x-x,e.y-y)<=(o.splash||20)){
         applyDamage(e,s.dmg,'fire');
         if(o.burn&&!e.dead)applyBurn(e,o.burn.dps,o.burn.t);
+        if(o.poison&&!e.dead)applyPoison(e,o.poison.dps,o.poison.t,o.poison.stacks,1);
       }
     }
+    if(o.pool)spawnPool(x,y,o.pool.r,o.pool.dps,o.pool.t);
     return;
   }
-  if(s.kind==='shard'){
+  if(s.kind==='shard'||s.kind==='necroshard'){
     if(s.target&&!s.target.dead){
       applyDamage(s.target,s.dmg,'ice');
       if(o.slow&&!s.target.dead)applySlow(s.target,o.slow.f,o.slow.t);
+      if(o.poison&&!s.target.dead)applyPoison(s.target,o.poison.dps,o.poison.t,o.poison.stacks,1);
     }
-    ring(x,y,1+L,6+3*L,'#8fd4ff');
-    burst(x,y,'#b8ecff',4+3*L,26,0.3);
+    ring(x,y,1+L,6+3*L,s.kind==='necroshard'?'#a8e05a':'#8fd4ff');
+    burst(x,y,s.kind==='necroshard'?'#a8e05a':'#b8ecff',4+3*L,26,0.3);
     return;
   }
-  if(s.kind==='vial'){
+  if(s.kind==='vial'||s.kind==='frostvial'){
+    const col=s.kind==='frostvial'?'#8fd4ff':'#7ac74a';
+    const hit=(e)=>{
+      applyDamage(e,s.dmg,'poison');
+      if(!e.dead){
+        if(o.poison)applyPoison(e,o.poison.dps,o.poison.t,o.poison.stacks,1);
+        if(o.burn)applyBurn(e,o.burn.dps,o.burn.t);
+        if(o.slow)applySlow(e,o.slow.f,o.slow.t);
+      }
+    };
     if(o.splash>0){
       SFX.poison();
-      ring(x,y,1+L,o.splash+2*L,'#7ac74a');
-      burst(x,y,'#7ac74a',8+4*L,34,0.4);
+      ring(x,y,1+L,o.splash+2*L,col);
+      burst(x,y,col,8+4*L,34,0.4);
       for(const e of G.enemies){
         if(e.dead||e.leaked)continue;
-        if(Math.hypot(e.x-x,e.y-y)<=o.splash){
-          applyDamage(e,s.dmg,'poison');
-          if(o.poison&&!e.dead)applyPoison(e,o.poison.dps,o.poison.t,o.poison.stacks,1);
-        }
+        if(Math.hypot(e.x-x,e.y-y)<=o.splash)hit(e);
       }
     }else{
-      if(s.target&&!s.target.dead){
-        applyDamage(s.target,s.dmg,'poison');
-        if(o.poison&&!s.target.dead)applyPoison(s.target,o.poison.dps,o.poison.t,o.poison.stacks,1);
+      if(s.target&&!s.target.dead)hit(s.target);
+      if(o.frostBoom&&s.target&&s.target.dead){
+        // Vial Glacial: la muerte congela a los vecinos
+        for(const e of G.enemies){
+          if(e.dead||e.leaked)continue;
+          if(Math.hypot(e.x-x,e.y-y)<=24)e.freeze=Math.max(e.freeze,0.8);
+        }
+        ring(x,y,2,20,'#b8ecff');
+        burst(x,y,'#b8ecff',10,30,0.4);
       }
-      burst(x,y,'#7ac74a',4+3*L,22,0.3);
+      burst(x,y,col,4+3*L,22,0.3);
     }
     return;
   }
@@ -1587,7 +1660,7 @@ function impact(s){
       if(Math.hypot(e.x-x,e.y-y)<=(o.splash||24)){
         applyDamage(e,s.dmg,'siege');
         if(o.kb&&!e.dead){e.dist=Math.max(0,e.dist-o.kb);const p=pointAt(e.dist);e.x=p.x;e.y=p.y;}
-        if(o.ember&&!e.dead)applyBurn(e,5,2);
+        if(o.burn&&!e.dead)applyBurn(e,o.burn.dps,o.burn.t);
       }
     }
     return;
@@ -1596,14 +1669,15 @@ function impact(s){
     SFX.holy();
     ring(x,y,1+L,8+3*L,'#ffe08a');
     burst(x,y,'#ffe08a',5+3*L,30,0.3);
+    const hito=(e)=>{
+      applyDamage(e,s.dmg,o.elem,{mult:o.mult});
+      if(o.stun&&!e.dead)e.freeze=Math.max(e.freeze,o.stun);
+    };
     for(const e of G.enemies){
       if(e.dead||e.leaked)continue;
-      if(o.splash&&Math.hypot(e.x-x,e.y-y)<=o.splash){
-        applyDamage(e,s.dmg,o.elem,{mult:o.mult});
-      }
+      if(o.splash&&Math.hypot(e.x-x,e.y-y)<=o.splash)hito(e);
     }
-    if(o.splash>0&&s.target){/* ya cubierto arriba */}
-    if(!o.splash&&s.target&&!s.target.dead)applyDamage(s.target,s.dmg,'holy',{mult:o.mult});
+    if(!o.splash&&s.target&&!s.target.dead)hito(s.target);
     return;
   }
 }
@@ -1629,6 +1703,17 @@ function update(dt){
     if(p.grav)p.vy+=p.grav*dt;
   }
   G.parts=G.parts.filter(p=>p.life>0);
+  for(const p of G.pools){
+    p.t-=dt;
+    for(const e of G.enemies){
+      if(e.dead||e.leaked)continue;
+      if(Math.hypot(e.x-p.x,e.y-p.y)<=p.r){
+        applyDamage(e,p.dps*dt,'fire');
+        if(e.hp<=0&&!e.dead)killEnemy(e);
+      }
+    }
+  }
+  G.pools=G.pools.filter(p=>p.t>0);
   for(const f of G.floats){f.t+=dt;f.y-=14*dt;}
   G.floats=G.floats.filter(f=>f.t<0.9);
   if(G.phase==='wave'&&!G.spawnQueue.length&&!G.enemies.length)endWave();
@@ -1651,7 +1736,7 @@ function victory(){
 function restart(){
   G.phase='idle';
   G.gold=130; G.lives=20; G.wave=0;
-  G.enemies=[]; G.towers=[]; G.shots=[]; G.fx=[]; G.parts=[]; G.floats=[];
+  G.enemies=[]; G.towers=[]; G.shots=[]; G.fx=[]; G.parts=[]; G.floats=[]; G.pools=[];
   G.spawnQueue=[]; G.waveTime=0; G.kills=0; G.goldEarned=0;
   G.buildType=null; G.selTower=null;
   loadMap(G.maps[G.mapSel]);
@@ -1750,17 +1835,50 @@ function drawShot(s){
       ctx.fillStyle='#e8e8d8';ctx.fillRect(x-1,y-1,3,1);
       ctx.fillRect(x+2,y-1,1,1);
     }
+  }else if(s.kind==='frostarrow'){
+    if(L>=3){ctx.fillStyle='rgba(143,212,255,0.35)';ctx.fillRect(x-3,y-2,7,3);}
+    ctx.fillStyle='#8fd4ff';ctx.fillRect(x-2,y-1,5,1);
+    ctx.fillStyle='#dff8ff';ctx.fillRect(x+3,y-1,1,1);
+    if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x+2,y-1,1,1);}
+  }else if(s.kind==='holyarrow'){
+    if(L>=3){ctx.fillStyle='rgba(255,224,138,0.35)';ctx.fillRect(x-3,y-2,7,3);}
+    ctx.fillStyle='#ffe08a';ctx.fillRect(x-2,y-1,5,1);
+    ctx.fillStyle='#fff';ctx.fillRect(x+3,y-1,1,1);
+    if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x+2,y-2,1,1);}
   }else if(s.kind==='fireball'){
     const r=L>=3?2:L>=2?1:0;
     if(L>=3){ctx.fillStyle='rgba(255,122,26,0.3)';ctx.fillRect(x-3,y-3,7,7);}
     ctx.fillStyle='#ff7a1a';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
     ctx.fillStyle='#ffd23e';ctx.fillRect(x-r,y-r,1+2*r,1+2*r);
     ctx.fillStyle='#fff2c0';ctx.fillRect(x,y,1,1);
+  }else if(s.kind==='toxbomb'){
+    const r=L>=3?2:L>=2?1:0;
+    if(L>=3){ctx.fillStyle='rgba(122,199,74,0.3)';ctx.fillRect(x-3,y-3,7,7);}
+    ctx.fillStyle='#ff7a1a';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
+    ctx.fillStyle='#7ac74a';ctx.fillRect(x-r,y-r,1+2*r,1+2*r);
+    ctx.fillStyle='#b8e87a';ctx.fillRect(x,y,1,1);
+  }else if(s.kind==='volcbomb'){
+    const r=L>=3?3:L>=2?2:1;
+    if(L>=3){ctx.fillStyle='rgba(255,122,26,0.3)';ctx.fillRect(x-4,y-4,9,9);}
+    ctx.fillStyle='#ff7a1a';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
+    ctx.fillStyle='#ffd23e';ctx.fillRect(x-r,y-r,1+2*r,1+2*r);
+    ctx.fillStyle='#fff2c0';ctx.fillRect(x,y,1,1);
+    if(Math.floor(G.time*6)%2===0){
+      ctx.fillStyle='#ff7a1a';
+      ctx.fillRect(x-2-r,y-3-r,2,1);
+      ctx.fillRect(x-2-r,y+2+r,2,1);
+    }
   }else if(s.kind==='shard'){
     const r=L>=3?2:L>=2?1:0;
     if(L>=3){ctx.fillStyle='rgba(143,212,255,0.3)';ctx.fillRect(x-3,y-3,7,7);}
     ctx.fillStyle='#8fd4ff';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
     ctx.fillStyle='#dff8ff';ctx.fillRect(x,y,1,1);
+    if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x-1-r,y-2-r,1,1);ctx.fillRect(x+1+r,y+1+r,1,1);}
+  }else if(s.kind==='necroshard'){
+    const r=L>=3?2:L>=2?1:0;
+    if(L>=3){ctx.fillStyle='rgba(168,224,90,0.3)';ctx.fillRect(x-3,y-3,7,7);}
+    ctx.fillStyle='#a8e05a';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
+    ctx.fillStyle='#d4ff8a';ctx.fillRect(x,y,1,1);
     if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x-1-r,y-2-r,1,1);ctx.fillRect(x+1+r,y+1+r,1,1);}
   }else if(s.kind==='orb'){
     const r=L>=3?2:L>=2?1:0;
@@ -1776,8 +1894,15 @@ function drawShot(s){
   }else if(s.kind==='rock'){
     const w=L>=3?8:L>=2?6:5;
     if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+8+L);ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(sx-2,sy,w-1,2);}
+    if(s.opts&&s.opts.ember){ctx.fillStyle='rgba(255,122,26,0.3)';ctx.fillRect(x-Math.floor(w/2)-1,y-Math.floor(w/2)-1,w+2,w+2);}
     ctx.fillStyle='#9a9a92';ctx.fillRect(x-Math.floor(w/2),y-Math.floor(w/2),w,w);
     ctx.fillStyle='#6b6b63';ctx.fillRect(x,y,w/2|0,w/2|0);
+    if(s.opts&&s.opts.ember){
+      ctx.fillStyle='#ff7a1a';
+      ctx.fillRect(x-Math.floor(w/2),y-Math.floor(w/2),2,1);
+      ctx.fillRect(x+Math.floor(w/2)-1,y-1,1,1);
+      ctx.fillRect(x,y-Math.floor(w/2),1,1);
+    }
     if(L>=3){ctx.fillStyle='#4a4a44';ctx.fillRect(x-2,y-2,2,2);ctx.fillRect(x+2,y+1,2,2);}
   }else if(s.kind==='vial'){
     if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+6+L);ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(sx-1,sy,3+L,1);}
@@ -1787,12 +1912,22 @@ function drawShot(s){
     ctx.fillStyle='#b8e87a';ctx.fillRect(x,y,1,1);
     ctx.fillStyle='#3a2a50';ctx.fillRect(x-Math.floor(vw/2),y-Math.floor(vh/2)-1,vw,1);
     if(L>=2){ctx.fillStyle='#eaffa0';ctx.fillRect(x-Math.floor(vw/2)-1,y,1,1);ctx.fillRect(x+Math.floor(vw/2)+1,y+1,1,1);}
+  }else if(s.kind==='frostvial'){
+    if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+6+L);ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(sx-1,sy,3+L,1);}
+    const vw2=L>=3?3:2,vh2=L>=3?5:L>=2?4:3;
+    if(L>=3){ctx.fillStyle='rgba(143,212,255,0.35)';ctx.fillRect(x-2,y-3,6,7);}
+    ctx.fillStyle='#8fd4ff';ctx.fillRect(x-Math.floor(vw2/2),y-Math.floor(vh2/2),vw2,vh2);
+    ctx.fillStyle='#dff8ff';ctx.fillRect(x,y,1,1);
+    ctx.fillStyle='#2a4a5a';ctx.fillRect(x-Math.floor(vw2/2),y-Math.floor(vh2/2)-1,vw2,1);
+    if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x-Math.floor(vw2/2)-1,y,1,1);ctx.fillRect(x+Math.floor(vw2/2)+1,y+1,1,1);}
   }
 }
 function drawBolt(f){
   const k=1-f.t/f.dur,L=f.lvl||1;
-  if(L>=2){ // resplandor violeta para niveles altos
-    ctx.fillStyle='rgba(138,99,255,'+(0.35*k).toFixed(2)+')';
+  const ice=f.ice===true||f.type==='frostbolt';
+  const base=ice?'rgba(143,212,255,':'rgba(138,99,255,';
+  if(L>=2){ // resplandor (helado para Cadena/Rayo Glacial, violeta para rayo)
+    ctx.fillStyle=base+(0.35*k).toFixed(2)+')';
     for(let i=0;i<f.pts.length-1;i++){
       const a=f.pts[i],b=f.pts[i+1];
       const steps=Math.max(2,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/2));
@@ -1814,7 +1949,7 @@ function drawBolt(f){
     ctx.fillStyle='rgba(255,255,255,'+(0.7*k).toFixed(2)+')';
     for(const p of f.pts)ctx.fillRect(Math.round(p[0])-1,Math.round(p[1])-1,3,3);
   }
-  ctx.fillStyle='rgba(138,99,255,'+(0.5*k).toFixed(2)+')';
+  ctx.fillStyle=base+(0.5*k).toFixed(2)+')';
   for(const p of f.pts)ctx.fillRect(Math.round(p[0])-1,Math.round(p[1]),3,1);
 }
 function draw(){
@@ -1822,6 +1957,18 @@ function draw(){
   ctx.drawImage(M.ground,0,0);
   // portal de aparición
   ctx.drawImage(SPR.spawn,M.spawnPx,M.spawnPy);
+  // charcos de lava (Bomba Volcánica)
+  for(const p of G.pools){
+    const a=clamp(p.t/p.t0,0,1),r=Math.round(p.r);
+    ctx.globalAlpha=0.25+0.3*a;
+    for(let gy=-Math.floor(r*0.7);gy<=Math.floor(r*0.7);gy+=2){
+      const w2=Math.floor(Math.sqrt(Math.max(0,r*r-gy*gy*0.49)));
+      if(w2<=0)continue;
+      ctx.fillStyle=(gy/2)%2===0?'#ff7a1a':'#9a2a0a';
+      ctx.fillRect(Math.round(p.x-w2),Math.round(p.y+gy),w2*2,1);
+    }
+    ctx.globalAlpha=1;
+  }
   // enlaces de sinergia
   for(const t of G.towers){
     for(const s of t.syn){
@@ -1857,7 +2004,7 @@ function draw(){
         ctx.fillRect(Math.round(f.x+Math.cos(aa)*r),Math.round(f.y+Math.sin(aa)*r*0.7),1,1);
       }
       ctx.globalAlpha=1;
-    }else if(f.type==='bolt'){
+    }else if(f.type==='bolt'||f.type==='frostbolt'){
       drawBolt(f);
     }
   }
@@ -2012,6 +2159,8 @@ function updateSel(){
     }
     const syn=add('<span class="st">Sinergias: </span>');
     if(t.syn.length){
+      const s0=t.syn[0],fus=s0.fuses[t.elem];
+      if(fus)add('<span class="st">Ataque fusionado: <b style="color:'+s0.color+'">'+fus+'</b> ('+s0.name+')</span>');
       for(const s of t.syn){
         const chip=document.createElement('span');
         chip.className='synchip'; chip.style.color=s.color; chip.style.borderColor=s.color;

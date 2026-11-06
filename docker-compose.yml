@@ -2,7 +2,7 @@
 # docker compose up --build
 #   juego  → http://localhost:8090          (nginx: juego + proxy /api)
 #   mapas  → interno :8081                  (API de mapas)
-#   scores → interno :8082                  (API de clasificación)
+#   scores → interno :8082                  (API de clasificación, MongoDB)
 
 services:
   juego:
@@ -30,10 +30,23 @@ services:
     container_name: torre-elemental-clasificacion
     environment:
       PORT: "8082"
-      DATA: /data/scores.json
+      MONGODB_URI: "mongodb://mongo:27017/torre_elemental"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: torre-elemental-mongo
     volumes:
-      - scores-data:/data
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:
-  scores-data:
+  mongo-data:
