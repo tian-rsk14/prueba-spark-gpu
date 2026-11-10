@@ -122,11 +122,21 @@ canvas#game{
 #wave-prev canvas{image-rendering:pixelated;}
 #wave-prev .cnt{color:var(--text);}
 #wave-prev .boss{color:var(--danger);}
+#wave-prev .wmarks{display:inline-flex; gap:2px; align-items:center;}
+#wave-prev .wmark{font-size:8px; line-height:1;}
+#overlay .bestiary-t{color:#8fd4ff; font-size:9px; text-shadow:2px 2px 0 #000;}
+#overlay .bestiary{display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:8px; max-width:900px; width:100%;}
+#overlay .bestc{background:#1e1830cc; border:2px solid #3a3054; padding:8px; font-size:7px; line-height:2.2; text-align:left;}
+#overlay .bestc b{color:#e8d8a0; font-size:8px;}
+#overlay .bestc .st{color:var(--dim);}
+@media (max-width:1100px){
+  #overlay .bestiary{grid-template-columns:repeat(2,minmax(150px,1fr));}
+}
 #overlay{
   position:absolute; inset:0; background:#0a0810e8; z-index:10;
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:14px; text-align:center; padding:20px; overflow:auto;
+  display:flex; text-align:center; padding:20px; overflow:auto;
 }
+#overlay>.opanel{margin:auto; display:flex; flex-direction:column; align-items:center; gap:14px;}
 #overlay.hidden{display:none;}
 #overlay .big{font-size:20px; color:var(--gold-hi); text-shadow:3px 3px 0 #4a2f00, 6px 6px 0 #000; line-height:1.6;}
 #overlay .sub{font-size:9px; color:var(--text); line-height:2.2; max-width:640px;}
@@ -1045,14 +1055,14 @@ const TOWERS={
 
 // ---------- datos de enemigos ----------
 const ENEMIES={
-  goblin:{name:'Goblin',hp:26,spd:52,armor:0,bounty:6,leak:1,spr:'e_goblin',color:'#5aa03a',resist:{}},
-  orco:{name:'Orco',hp:70,spd:38,armor:1,bounty:11,leak:1,spr:'e_orco',color:'#4a7a3a',resist:{}},
-  esqueleto:{name:'Esqueleto',hp:55,spd:46,armor:1,bounty:9,leak:1,undead:true,spr:'e_esqueleto',color:'#e8e8d8',resist:{fire:0.35}},
-  vampiro:{name:'Vampiro',hp:85,spd:50,armor:0,bounty:15,leak:1,undead:true,regen:4,spr:'e_vampiro',color:'#a85ac0',resist:{fire:0.4}},
-  caballero:{name:'Caballero Oscuro',hp:170,spd:34,armor:4,bounty:20,leak:1,spr:'e_caballero',color:'#b8b8c0',resist:{physical:0.35}},
-  brujo:{name:'Brujo',hp:110,spd:36,armor:0,bounty:18,leak:1,spr:'e_brujo',color:'#8a63ff',resist:{lightning:0.65}},
-  golem:{name:'Golem de Piedra',hp:320,spd:20,armor:5,bounty:35,leak:2,spr:'e_golem',color:'#9a7a52',resist:{fire:0.45}},
-  dragon:{name:'Dragón Anciano',hp:3200,spd:24,armor:6,bounty:250,leak:5,boss:true,spr:'e_dragon',color:'#e05a3a',resist:{fire:0.3}},
+  goblin:{name:'Goblin',hp:26,spd:52,armor:0,bounty:6,leak:1,spr:'e_goblin',color:'#5aa03a',weak:{fire:1.5},resist:{}},
+  orco:{name:'Orco',hp:70,spd:38,armor:1,bounty:11,leak:1,spr:'e_orco',color:'#4a7a3a',weak:{ice:1.5},resist:{physical:0.3}},
+  esqueleto:{name:'Esqueleto',hp:55,spd:46,armor:1,bounty:9,leak:1,undead:true,spr:'e_esqueleto',color:'#e8e8d8',weak:{holy:2},resist:{fire:0.35}},
+  vampiro:{name:'Vampiro',hp:85,spd:50,armor:0,bounty:15,leak:1,undead:true,regen:4,spr:'e_vampiro',color:'#a85ac0',weak:{holy:2},resist:{fire:0.4,poison:0.5}},
+  caballero:{name:'Caballero Oscuro',hp:170,spd:34,armor:4,bounty:20,leak:1,spr:'e_caballero',color:'#b8b8c0',weak:{fire:1.5},resist:{physical:0.35}},
+  brujo:{name:'Brujo',hp:110,spd:36,armor:0,bounty:18,leak:1,spr:'e_brujo',color:'#8a63ff',weak:{poison:1.5,fire:1.25},resist:{lightning:0.65}},
+  golem:{name:'Golem de Piedra',hp:320,spd:20,armor:5,bounty:35,leak:2,spr:'e_golem',color:'#9a7a52',weak:{ice:1.5,lightning:1.25},resist:{fire:0.45,poison:0.5}},
+  dragon:{name:'Dragón Anciano',hp:3200,spd:24,armor:6,bounty:250,leak:5,boss:true,spr:'e_dragon',color:'#e05a3a',weak:{ice:1.5},resist:{fire:0.3,physical:0.35}},
 };
 
 // ---------- sinergias (fusionan los ataques en uno nuevo) ----------
@@ -1123,9 +1133,10 @@ const G={
 
 // ---------- combate ----------
 const ELEM_COLOR={physical:'#ffffff',siege:'#d8c8a0',fire:'#ff9d3c',ice:'#8fd4ff',lightning:'#c0a8ff',poison:'#a8e05a',holy:'#ffe08a'};
-function addFloat(x,y,txt,color){
+function addFloat(x,y,txt,color,opts){
   if(G.floats.length>40)G.floats.shift();
-  G.floats.push({x,y,txt,color,t:0});
+  opts=opts||{};
+  G.floats.push({x,y,txt,color,t:0,big:!!opts.big});
 }
 function burst(x,y,color,n,spd,life,grav){
   for(let i=0;i<n;i++){
@@ -1140,12 +1151,20 @@ function applyDamage(e,raw,elem,opts){
   let dmg=raw*(opts.mult||1);
   const res=(e.resist&&e.resist[elem])||0;
   dmg*=(1-res);
+  const weakF=(e.weak&&e.weak[elem])||0;
+  if(weakF)dmg*=weakF;
   if(opts.armor!==false&&e.armor>0)dmg=Math.max(1,dmg-e.armor);
   dmg=Math.max(0,dmg);
   if(dmg<=0)return 0;
   e.hp-=dmg;
-  if(opts.float!==false)addFloat(e.x+ri(-3,3),e.y-12,Math.ceil(dmg),ELEM_COLOR[elem]||'#fff');
-  burst(e.x,e.y,ELEM_COLOR[elem]||'#fff',3,22,0.25);
+  const col=ELEM_COLOR[elem]||'#fff';
+  if(opts.float!==false){
+    if(weakF)addFloat(e.x+ri(-3,3),e.y-12,Math.ceil(dmg),col,{big:true});
+    else if(res>0)addFloat(e.x+ri(-3,3),e.y-12,Math.ceil(dmg),'#8a8a8a');
+    else addFloat(e.x+ri(-3,3),e.y-12,Math.ceil(dmg),col);
+  }
+  burst(e.x,e.y,col,3,22,0.25);
+  if(weakF)burst(e.x,e.y,col,2,26,0.3);
   if(e.hp<=0)killEnemy(e,opts);
   return dmg;
 }
@@ -1212,7 +1231,7 @@ function spawnEnemy(type){
     hp:d.hp*m, maxHp:d.hp*m,
     spd:d.spd*(1+0.01*(G.wave-1))*M.data.diff.spd, armor:d.armor, bounty:d.bounty, leak:d.leak,
     undead:!!d.undead, regen:d.regen||0, boss:!!d.boss,
-    resist:d.resist, color:d.color, spr:d.spr,
+    resist:d.resist, weak:d.weak, color:d.color, spr:d.spr,
     dist:0, x:M.wp[0][0], y:M.wp[0][1],
     slowF:0, slowT:0, freeze:0,
     burnDps:0, burnStacks:0, burnT:0, burnAcc:0,
@@ -1303,8 +1322,6 @@ function computeSynergies(){
     }
   }
 }
-const hasSyn=(t,id)=>t&&t.syn.some(s=>s.id===id);
-
 // ---------- actualización ----------
 function updateEnemy(e,dt){
   e.animT+=dt;
@@ -1352,7 +1369,7 @@ function updateEnemy(e,dt){
 }
 function acquire(t){
   const lv=TOWERS[t.type].lv[t.lvl-1];
-  const range=lv.flame?lv.range:(lv.range||90);
+  const range=lv.range||90;
   let best=null,bd=-1;
   for(const e of G.enemies){
     if(e.dead||e.leaked)continue;
@@ -1455,7 +1472,7 @@ function fireTower(t,e){
       let kind='vial',opts={poison:lv.poison,splash:lv.splash||0};
       if(syn&&syn.id==='comb'){opts.burn={dps:6,t:3};} // Nube Incendiaria
       else if(syn&&syn.id==='necrosis'){kind='frostvial';opts.slow={f:0.35,t:1.8};opts.frostBoom=true;} // Vial Glacial
-      G.shots.push({kind,x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts,lvl:t.lvl,h0:14});
+      G.shots.push({kind,x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,target:e,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts,lvl:t.lvl,h0:14});
       SFX.poison();
       break;}
     case 'siege':{
@@ -1467,7 +1484,7 @@ function fireTower(t,e){
     case 'holy':{
       const bless=!!(syn&&syn.id==='bless'); // Juicio Radiante
       const mult=e.undead?(bless?3:(t.lvl>=3?2.5:2)):(bless?1.5:1);
-      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:bless?260:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:lv.splash||0,stun:bless?0.4:0},lvl:t.lvl,t:0,life:1.4});
+      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:bless?260:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:bless?20:(lv.splash||0),stun:bless?0.4:0},lvl:t.lvl,t:0,life:1.4});
       SFX.holy();
       break;}
   }
@@ -1637,16 +1654,16 @@ function impact(s){
       }
     }else{
       if(s.target&&!s.target.dead)hit(s.target);
-      if(o.frostBoom&&s.target&&s.target.dead){
-        // Vial Glacial: la muerte congela a los vecinos
-        for(const e of G.enemies){
-          if(e.dead||e.leaked)continue;
-          if(Math.hypot(e.x-x,e.y-y)<=24)e.freeze=Math.max(e.freeze,0.8);
-        }
-        ring(x,y,2,20,'#b8ecff');
-        burst(x,y,'#b8ecff',10,30,0.4);
-      }
       burst(x,y,col,4+3*L,22,0.3);
+    }
+    if(o.frostBoom&&s.target&&s.target.dead){
+      // Vial Glacial: la muerte congela a los vecinos (área y single-target)
+      for(const e of G.enemies){
+        if(e.dead||e.leaked)continue;
+        if(Math.hypot(e.x-x,e.y-y)<=24)e.freeze=Math.max(e.freeze,0.8);
+      }
+      ring(x,y,2,20,'#b8ecff');
+      burst(x,y,'#b8ecff',10,30,0.4);
     }
     return;
   }
@@ -1708,8 +1725,7 @@ function update(dt){
     for(const e of G.enemies){
       if(e.dead||e.leaked)continue;
       if(Math.hypot(e.x-p.x,e.y-p.y)<=p.r){
-        applyDamage(e,p.dps*dt,'fire');
-        if(e.hp<=0&&!e.dead)killEnemy(e);
+        applyDamage(e,p.dps*dt,'fire',{armor:false,float:false}); // la lava ignora la armadura
       }
     }
   }
@@ -1750,49 +1766,85 @@ function restart(){
 const DIG={'0':'010\n101\n101\n101\n010','1':'010\n110\n010\n010\n111','2':'110\n001\n010\n100\n111',
 '3':'111\n001\n011\n001\n111','4':'101\n101\n111\n001\n001','5':'111\n100\n110\n001\n110',
 '6':'110\n100\n111\n101\n110','7':'111\n001\n010\n010\n010','8':'110\n101\n110\n101\n110','9':'110\n101\n111\n001\n110'};
-function drawNum(x,y,n,color){
+function drawNum(x,y,n,color,scale){
+  const ps=Math.max(1,Math.round(scale||1)); // tamaño de "píxel" (escala)
+  const adv=3*ps+1;                          // avance por dígito
   x=Math.round(x); y=Math.round(y);
   let cx=x;
   const s=n<0?'-':'';
   const str=s+String(Math.abs(Math.round(n)));
-  if(s){ctx.fillStyle=color;ctx.fillRect(cx,y+1,2,1);cx+=3;}
+  ctx.fillStyle=color;
+  if(s){ctx.fillRect(cx,y+ps,2,ps);cx+=2*ps+1;}
   for(const ch of str){
-    if(DIG[ch])for(let r=0;r<5;r++)for(let c=0;c<3;c++)if(DIG[ch][r][c]==='1'){ctx.fillStyle=color;ctx.fillRect(cx+c,y+r,1,1);}
-    cx+=4;
+    if(DIG[ch])for(let r=0;r<5;r++)for(let c=0;c<3;c++)if(DIG[ch][r][c]==='1'){
+      ctx.fillRect(Math.round(cx+c*ps),Math.round(y+r*ps),ps,ps);
+    }
+    cx+=adv;
   }
 }
 
 // ---------- render ----------
 const cv=$('game'), ctx=cv.getContext('2d');
 ctx.imageSmoothingEnabled=false;
-function shadow(x,y,w){
-  ctx.fillStyle='rgba(0,0,0,0.28)';
-  ctx.fillRect(Math.round(x-w/2),Math.round(y),w,2);
+// B1: sombreado pseudo-3D pixel-art
+function shade(hex,pct){ // oscurece (+pct<0) o aclara (pct>0) un color hex
+  const n=parseInt(hex.slice(1),16);
+  let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  const f=1+pct;
+  r=clamp(Math.round(r*f),0,255); g=clamp(Math.round(g*f),0,255); b=clamp(Math.round(b*f),0,255);
+  return '#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1);
+}
+// color base de cada torre (paleta) para extruir la cara lateral (B3)
+const TOWER_BASE={archer:'#a06a33',siege:'#a06a33',fire:'#8d8d93',ice:'#3f8fc0',bolt:'#9a9aa5',poison:'#8d8d93',holy:'#e8b830'};
+// radio horizontal de sombra según tamaño real de cada sprite enemigo (B2)
+const SHADOW_RX={dragon:6,golem:5,vampiro:4,brujo:4,goblin:3,orco:3,esqueleto:3,caballero:3};
+function drawShadow(x,y,rx,ry,alpha){ // elipse pixel-art: filas de 1px, anchos decrecientes, sin gradientes
+  x=Math.round(x); y=Math.round(y);
+  rx=Math.max(1,Math.round(rx));
+  ry=Math.min(3,Math.max(1,Math.round(ry)));
+  ctx.fillStyle='rgba(0,0,0,'+(alpha===undefined?0.22:alpha)+')';
+  for(let i=-ry;i<=ry;i++){
+    const w=Math.round(rx*Math.sqrt(Math.max(0,1-(i*i)/(ry*ry))));
+    if(w<=0)continue;
+    ctx.fillRect(x-w,y+i,w*2,1);
+  }
 }
 function drawTower(t){
   const spr=SPR['t_'+t.type+'_'+t.lvl];
-  shadow(t.x,t.y+13,12);
-  ctx.drawImage(spr,t.x-8,t.y-8);
+  // B3: altura por nivel — se extruye hacia abajo (muro) y el sprite queda arriba
+  const baseY=Math.round(t.y+13);        // base de la torre (donde va la sombra, B2)
+  const wallH=6+t.lvl*2;                 // nivel 1 baja (8px), nivel 3 alta (12px)
+  const spriteTop=baseY-wallH-16;        // la cara superior (sprite) se apoya sobre el muro
+  const topOff=spriteTop-(t.y-8);        // desplazamiento vertical vs. el sprite original
+  const base=TOWER_BASE[t.type]||'#a06a33';
+  const wx=Math.round(t.x-6),ww=12;
+  // cara lateral (muro): tono -20% del color base, base -35%
+  ctx.fillStyle=shade(base,-0.2);
+  ctx.fillRect(wx,baseY-wallH,ww,wallH);
+  ctx.fillStyle=shade(base,-0.35);
+  ctx.fillRect(wx,baseY-2,ww,2);
+  // cara superior: sprite actual
+  ctx.drawImage(spr,t.x-8,spriteTop);
   for(let i=0;i<t.lvl;i++){
     ctx.fillStyle='#ffd23e';
-    ctx.fillRect(t.x-6+i*4,t.y+14,2,2);
+    ctx.fillRect(t.x-6+i*4,baseY-4,2,2);
     ctx.fillStyle='#8a6a14';
-    ctx.fillRect(t.x-6+i*4,t.y+15,2,1);
+    ctx.fillRect(t.x-6+i*4,baseY-2,2,1);
   }
-  // resplandor ambiental: los niveles altos se notan vivos
+  // resplandor ambiental: los niveles altos se notan vivos (sigue al sprite)
   const tw=Math.floor(G.time*5+t.seed)%3;
   if(t.lvl>=2&&(t.type==='fire'||t.type==='poison')){
     ctx.fillStyle=t.type==='fire'?(tw===0?'#ffb340':'#ff7a1a'):(tw===0?'#b8e87a':'#7ac74a');
-    ctx.fillRect(t.x-3+tw*2,t.y-13,2,1);
+    ctx.fillRect(t.x-3+tw*2,t.y-13+topOff,2,1);
   }
   if(t.lvl>=2&&t.type==='ice'){
     ctx.fillStyle=tw===0?'#dff8ff':'#8fd4ff';
-    ctx.fillRect(t.x+4,t.y-9-tw,1,1);
+    ctx.fillRect(t.x+4,t.y-9+topOff-tw,1,1);
   }
   if(t.lvl>=3){
     ctx.fillStyle='#ffe08a';
     const tw3=Math.floor(G.time*4+t.seed)%2;
-    ctx.fillRect(t.x-1+tw3,t.y-14,2,2);
+    ctx.fillRect(t.x-1+tw3,t.y-14+topOff,2,2);
   }
 }
 function drawEnemy(e){
@@ -1800,8 +1852,21 @@ function drawEnemy(e){
   const spr=(arr[1]&&Math.floor(e.animT*8+e.seed)%2===1)?arr[1]:arr[0];
   const bob=Math.floor(Math.sin(e.animT*7+e.seed));
   const w=spr.width,h=spr.height;
-  shadow(e.x,e.y+6,w-2);
-  ctx.drawImage(spr,Math.round(e.x-w/2),Math.round(e.y-h+6+bob));
+  const sx=Math.round(e.x-w/2), sy=Math.round(e.y-h+6+bob);
+  // B4: volumen — base oscura (1-2 filas, tono -30%) bajo el sprite; más ancha en dragón/golem
+  const big=e.boss||e.spr==='e_golem';
+  const bw=big?w:w-2, bx=Math.round(e.x-bw/2), by=Math.round(e.y+6+bob);
+  ctx.fillStyle=shade(e.color,-0.3);
+  ctx.fillRect(bx,by,bw,big?2:1);
+  if(big)ctx.fillRect(bx,by-1,bw,1);
+  // sprite
+  ctx.drawImage(spr,sx,sy);
+  // B4: brillo superior sutil (1px más claro en la cara, solo donde hay píxel de sprite)
+  try{
+    const sd=spr.getContext('2d').getImageData(0,0,w,h).data;
+    ctx.fillStyle=shade(e.color,0.4);
+    for(let c=0;c<w;c++)if(sd[c*4+3]>0)ctx.fillRect(sx+c,sy,1,1);
+  }catch(err){}
   if(e.hp<e.maxHp){
     const bw=Math.max(w,12),r=clamp(e.hp/e.maxHp,0,1);
     const bx=Math.round(e.x-bw/2),by=Math.round(e.y-h+2);
@@ -1874,6 +1939,7 @@ function drawShot(s){
     ctx.fillStyle='#8fd4ff';ctx.fillRect(x-1-r,y-1-r,3+2*r,3+2*r);
     ctx.fillStyle='#dff8ff';ctx.fillRect(x,y,1,1);
     if(L>=2){ctx.fillStyle='#fff';ctx.fillRect(x-1-r,y-2-r,1,1);ctx.fillRect(x+1+r,y+1+r,1,1);}
+    if(s.opts&&s.opts.lance){ctx.fillStyle='#eaffff';ctx.fillRect(x-2-r,y-1,1,2);ctx.fillRect(x+2+r,y-1,1,2);} // Lanza Glacial: punta 1px más larga
   }else if(s.kind==='necroshard'){
     const r=L>=3?2:L>=2?1:0;
     if(L>=3){ctx.fillStyle='rgba(168,224,90,0.3)';ctx.fillRect(x-3,y-3,7,7);}
@@ -1893,7 +1959,6 @@ function drawShot(s){
     }
   }else if(s.kind==='rock'){
     const w=L>=3?8:L>=2?6:5;
-    if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+8+L);ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(sx-2,sy,w-1,2);}
     if(s.opts&&s.opts.ember){ctx.fillStyle='rgba(255,122,26,0.3)';ctx.fillRect(x-Math.floor(w/2)-1,y-Math.floor(w/2)-1,w+2,w+2);}
     ctx.fillStyle='#9a9a92';ctx.fillRect(x-Math.floor(w/2),y-Math.floor(w/2),w,w);
     ctx.fillStyle='#6b6b63';ctx.fillRect(x,y,w/2|0,w/2|0);
@@ -1905,7 +1970,6 @@ function drawShot(s){
     }
     if(L>=3){ctx.fillStyle='#4a4a44';ctx.fillRect(x-2,y-2,2,2);ctx.fillRect(x+2,y+1,2,2);}
   }else if(s.kind==='vial'){
-    if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+6+L);ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(sx-1,sy,3+L,1);}
     const vw=L>=3?3:2,vh=L>=3?5:L>=2?4:3;
     if(L>=3){ctx.fillStyle='rgba(122,199,74,0.35)';ctx.fillRect(x-2,y-3,6,7);}
     ctx.fillStyle='#7ac74a';ctx.fillRect(x-Math.floor(vw/2),y-Math.floor(vh/2),vw,vh);
@@ -1913,7 +1977,6 @@ function drawShot(s){
     ctx.fillStyle='#3a2a50';ctx.fillRect(x-Math.floor(vw/2),y-Math.floor(vh/2)-1,vw,1);
     if(L>=2){ctx.fillStyle='#eaffa0';ctx.fillRect(x-Math.floor(vw/2)-1,y,1,1);ctx.fillRect(x+Math.floor(vw/2)+1,y+1,1,1);}
   }else if(s.kind==='frostvial'){
-    if(s.h){const sx=Math.round(s.x),sy=Math.round(s.y+6+L);ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(sx-1,sy,3+L,1);}
     const vw2=L>=3?3:2,vh2=L>=3?5:L>=2?4:3;
     if(L>=3){ctx.fillStyle='rgba(143,212,255,0.35)';ctx.fillRect(x-2,y-3,6,7);}
     ctx.fillStyle='#8fd4ff';ctx.fillRect(x-Math.floor(vw2/2),y-Math.floor(vh2/2),vw2,vh2);
@@ -1987,6 +2050,17 @@ function draw(){
       }
     }
   }
+  // B2: TODAS las sombras antes de las entidades (elipse pixel-art, sin sombra en pools: ya son suelo)
+  for(const e of G.enemies){
+    const rx=SHADOW_RX[e.type]||3;
+    drawShadow(e.x,e.y+6,rx,rx>=5?3:2);
+  }
+  for(const t of G.towers)drawShadow(t.x,t.y+13,4,2);
+  for(const s of G.shots){
+    const h=s.h||0;
+    const rx2=(s.kind==='rock'||s.kind==='volcbomb'||s.kind==='fireball')?2:1;
+    drawShadow(s.x,Math.round(s.y+3+Math.min(3,Math.round(h/4))),rx2,1,0.15);
+  }
   // entidades ordenadas por profundidad
   const ents=[...G.towers.map(t=>({y:t.y+13,f:()=>drawTower(t)})),...G.enemies.map(e=>({y:e.y+6,f:()=>drawEnemy(e)}))];
   ents.sort((a,b)=>a.y-b.y);
@@ -2038,10 +2112,11 @@ function draw(){
     ctx.beginPath();ctx.arc(c*CELL+8,r*CELL+8,lv.range,0,Math.PI*2);ctx.stroke();
     ctx.globalAlpha=1;
   }
-  // números flotantes
+  // números flotantes (big = golpe con debilidad: escala 1.5)
   for(const f of G.floats){
     ctx.globalAlpha=clamp(1-f.t/0.9,0,1);
-    drawNum(f.x-4,f.y,f.txt,f.color);
+    const sc=f.big?1.5:1;
+    drawNum(f.x-Math.round(4*sc),f.y,f.txt,f.color,sc);
     ctx.globalAlpha=1;
   }
 }
@@ -2132,6 +2207,10 @@ function updateWavePreview(){
     sp.className='cnt'+(ENEMIES[g[0]].boss?' boss':'');
     sp.textContent=(ENEMIES[g[0]].boss?'★ ':'' )+ENEMIES[g[0]].name+' x'+g[1];
     row.appendChild(sp);
+    const mk=document.createElement('span');
+    mk.className='wmarks';
+    mk.innerHTML=elemChipsHTML(g[0]); // ⚔ debilidad (color del elemento) · 🛡 resistencia
+    row.appendChild(mk);
     box.appendChild(row);
   }
 }
@@ -2160,7 +2239,7 @@ function updateSel(){
     const syn=add('<span class="st">Sinergias: </span>');
     if(t.syn.length){
       const s0=t.syn[0],fus=s0.fuses[t.elem];
-      if(fus)add('<span class="st">Ataque fusionado: <b style="color:'+s0.color+'">'+fus+'</b> ('+s0.name+')</span>');
+      if(fus&&!lv.flame)add('<span class="st">Ataque fusionado: <b style="color:'+s0.color+'">'+fus+'</b> ('+s0.name+')</span>'); // Ígnea nv3 ignora sinergias: no mostrar
       for(const s of t.syn){
         const chip=document.createElement('span');
         chip.className='synchip'; chip.style.color=s.color; chip.style.borderColor=s.color;
@@ -2211,6 +2290,36 @@ $('infobar').addEventListener('click',e=>{
 // ---------- overlays ----------
 function showOverlay(html){const o=$('overlay');o.innerHTML=html;o.classList.remove('hidden');}
 function hideOverlay(){$('overlay').classList.add('hidden');}
+// A4: bestiario — los 8 enemigos con stats, debilidades (⚡daga) y resistencias (escudo)
+const ELEM_N={physical:'físico',fire:'fuego',ice:'hielo',lightning:'rayo',poison:'veneno',siege:'sitio',holy:'sagrado'};
+function bestiaryHTML(){
+  const order=['goblin','orco','esqueleto','vampiro','caballero','brujo','golem','dragon'];
+  const fmtMult=m=>m%1===0?m.toFixed(1):String(m); // 2→"2.0", 1.5→"1.5", 1.25→"1.25"
+  const cards=order.map(k=>{
+    const d=ENEMIES[k];
+    const wks=Object.keys(d.weak||{}).map(el=>
+      '<span style="color:'+ELEM_COLOR[el]+'">⚔ '+ELEM_N[el]+' ×'+fmtMult(d.weak[el])+'</span>').join(' ');
+    const rss=Object.keys(d.resist||{}).map(el=>
+      '<span style="color:#b8a060">🛡 '+ELEM_N[el]+' -'+Math.round(d.resist[el]*100)+'%</span>').join(' ');
+    return '<div class="bestc"><b>'+d.name+'</b><br>'+
+      '<span class="st">HP '+d.hp+' · VEL '+d.spd+' · ARM '+d.armor+'</span><br>'+
+      (wks?'<span class="st">Debilidades:</span> '+wks+'<br>':'<span class="st">Debilidades:</span> <span style="color:var(--dim)">ninguna</span><br>')+
+      (rss?'<span class="st">Resistencias:</span> '+rss:'<span class="st">Resistencias:</span> <span style="color:var(--dim)">ninguna</span>')+
+      '</div>';
+  }).join('');
+  return '<div class="bestiary-t">BESTIARIO — ⚔ débil (×multi) · 🛡 resiste (-%)</div>'+
+    '<div class="bestiary">'+cards+'</div>';
+}
+// A5: marcadores compactos de elemento (debilidad ⚔ / resistencia 🛡) para la preview de oleada
+function elemChipsHTML(k){
+  const d=ENEMIES[k];
+  let h='';
+  for(const el of Object.keys(d.weak||{}))
+    h+='<span class="wmark" style="color:'+ELEM_COLOR[el]+'" title="Débil: '+ELEM_N[el]+' x'+d.weak[el]+'">⚔</span>';
+  for(const el of Object.keys(d.resist||{}))
+    h+='<span class="wmark" title="Resiste: '+ELEM_N[el]+' -'+Math.round(d.resist[el]*100)+'%">🛡</span>';
+  return h;
+}
 function menuHTML(){
   const cards=TOWER_ORDER.map(k=>{
     const d=TOWERS[k];
@@ -2224,7 +2333,8 @@ function menuHTML(){
     '<div class="mapc'+(i===G.mapSel?' on':'')+'" data-act="map" data-i="'+i+'"><b>'+m.name+'</b> <span class="stars">'+'★'.repeat(m.stars)+'</span><br>'+
     '<span class="md">'+m.desc+'</span></div>'
   ).join('');
-  return '<div class="big">TORRE<br>ELEMENTAL</div>'+
+  return '<div class="opanel">'+
+    '<div class="big">TORRE<br>ELEMENTAL</div>'+
     '<div class="sub">Defiende el castillo de <b>18 oleadas</b> de hordas medievales.<br>'+
     'Cada torre tiene un ataque único y <b>3 aspectos</b>: al mejorar, la torre cambia de diseño y su ataque se hace más potente.</div>'+
     '<div class="maps">'+maps+'</div>'+
@@ -2235,23 +2345,29 @@ function menuHTML(){
     '<div class="col"><h3>CONTROLES</h3>1-7: elegir torre<br>CLIC: construir / inspeccionar<br>U: mejorar · S: vender<br>ESPACIO: iniciar oleada<br>F: velocidad x1/x2 · P: pausa<br>M: sonido · ESC: cancelar<br><br><span class="c">Golemas y dragones</span> quitan 2-5 vidas si entran.</div>'+
     '<div class="lb" id="lb"><h3>MEJORES HÉROES</h3><div style="color:var(--dim)">Cargando top 10…</div></div>'+
     '</div>'+
-    '<button class="btn" data-act="play">▶ JUGAR — <span id="mapname">'+G.maps[G.mapSel].name+'</span></button>';
+    bestiaryHTML()+
+    '<button class="btn" data-act="play">▶ JUGAR — <span id="mapname">'+G.maps[G.mapSel].name+'</span></button>'+
+  '</div>';
 }
 function overHTML(){
-  return '<div class="big" style="color:#ff5a4a;text-shadow:3px 3px 0 #4a0000,6px 6px 0 #000">EL REINO<br>HAE CAÍDO</div>'+
+  return '<div class="opanel">'+
+  '<div class="big" style="color:#ff5a4a;text-shadow:3px 3px 0 #4a0000,6px 6px 0 #000">EL REINO<br>HAE CAÍDO</div>'+
   '<div class="stat">Sobreviviste hasta la oleada <b style="color:#8fd4ff">'+G.wave+'</b><br>'+
   'Bajas: <b style="color:#a8e05a">'+G.kills+'</b> · Oro ganado: <b style="color:#ffd23e">'+G.goldEarned+'</b></div>'+
-  '<button class="btn" data-act="retry">↻ REINTENTAR</button>';
+  '<button class="btn" data-act="retry">↻ REINTENTAR</button>'+
+  '</div>';
 }
 function winHTML(){
   const map=(G.maps[G.mapSel]||{}).name||'?';
-  return '<div class="big">¡VICTORIA!<br style="color:#ffe08a">El reino está a salvo</div>'+
+  return '<div class="opanel">'+
+  '<div class="big">¡VICTORIA!<br style="color:#ffe08a">El reino está a salvo</div>'+
   '<div class="stat">Completaste las <b style="color:#8fd4ff">18 oleadas</b> en <b style="color:#e8d8a0">'+map+'</b><br>'+
   'Bajas: <b style="color:#a8e05a">'+G.kills+'</b> · Oro ganado: <b style="color:#ffd23e">'+G.goldEarned+'</b><br>'+
   'Vidas restantes: <b style="color:#ff7a6a">'+G.lives+'</b> · Puntuación: <b style="color:var(--gold-hi)">'+finalScore()+'</b></div>'+
   '<div><input id="pname" maxlength="14" placeholder="Tu nombre, campeón" value="'+(G.lastName||'')+'"></div>'+
   '<button class="btn" data-act="submit">✦ GUARDAR PUNTUACIÓN</button>'+
-  '<button class="btn" data-act="retry" style="margin-top:-6px">↻ JUGAR OTRA VEZ</button>';
+  '<button class="btn" data-act="retry" style="margin-top:-6px">↻ JUGAR OTRA VEZ</button>'+
+  '</div>';
 }
 function finalScore(){return G.kills*10+G.goldEarned+G.lives*100+G.wave*50;}
 // ---------- microservicios (mapas + clasificación) ----------
@@ -2262,8 +2378,9 @@ function apiURL(p){
     return '/api'+p;
   }catch(e){return '';}
 }
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function lbRow(i,s){
-  return '<div class="row"><span><span style="color:var(--dim)">'+(i+1)+'. </span><span class="n">'+s.n+'</span> <span style="color:var(--dim)">'+(s.m||'')+'</span></span><span class="s">'+s.sc+'</span></div>';
+  return '<div class="row"><span><span style="color:var(--dim)">'+(i+1)+'. </span><span class="n">'+esc(s.n)+'</span> <span style="color:var(--dim)">'+esc(s.m||'')+'</span></span><span class="s">'+esc(s.sc)+'</span></div>';
 }
 function fetchTop(){
   const u=apiURL('/scores/top');
@@ -2380,6 +2497,7 @@ raf=requestAnimationFrame(frame);
 // hook de test (no visible)
 window.__test={
   G, placeTower, startWave, update, draw, SPR, mkSpr, loadMap, MAPS,
+  applyDamage, ENEMIES, TOWERS, lbRow, impact, fireTower,
   step(ms){const n=Math.round(ms/16.6);for(let i=0;i<n;i++){update(0.0166);}draw();},
 };
 </script>
