@@ -354,6 +354,25 @@ function mkSpr(rows,pal){
   return c;
 }
 const SPR={};
+
+// helper: dibuja un sprite de forma segura.
+/// safeDraw(img, x, y)        -> usa ctx del canvas principal
+/// safeDraw(ctx, img, x, y)   -> usa el contexto dado (para tiendas)
+function safeDraw(a,b,c,d){
+  let targetCtx, img, x, y;
+  // Si el primer argumento es un contexto de canvas (tiene fillStyle), usarlo directamente
+  if(a && typeof a.fillStyle !== 'undefined'){
+    targetCtx = a; img = b; x = c; y = d !== undefined ? d : 0;
+  } else {
+    // Primero es una imagen, usar ctx del canvas principal
+    targetCtx = ctx; img = a; x = b; y = c;
+  }
+  if(!img || typeof img!=='object' || !img.getContext || !img.width || !img.height){
+    targetCtx.fillStyle='#ff00ff'; targetCtx.fillRect(Math.round(x||0),Math.round(y||0),16,16);
+    return;
+  }
+  targetCtx.drawImage(img,x,y);
+}
 // --- torres (16x16) ---
 SPR.t_archer_1=mkSpr([
     '................',
@@ -943,21 +962,33 @@ SPR.e_dragon=[mkSpr([
         '.#BBBBB#....',
         '.#######....',
         '............'
-    ], {'#':'#000000', 'B':'#8a2820', 'w':'#c0392b'}),
-mkSpr([
-        '............',
-        '.######.....',
-        '#wBBwBB#....',
-        '#BBwwwwB##..',
-        '#BwwwwwwB#..',
-        '#Bwwwwww##..',
-        '.#BBBBB#....',
-        '..#BBBB#....',
-        '..#BBBB#....',
-        '.#BBBBB#....',
-        '.#######....',
-        '............'
     ], {'#':'#000000', 'B':'#8a2820', 'w':'#c0392b'})];
+// sprites de portal y castillo (usados en draw())
+SPR.spawn=mkSpr([
+    '............',
+    '..########..',
+    '..#cccccc#..',
+    '..#cffffc#..',
+    '..#cf4f4c#..',
+    '..#cffffc#..',
+    '..#cccccc#..',
+    '..########..',
+    '............'],
+    {'#':'#000000','c':'#5a2a8a','f':'#ffd23e','4':'#ffb340'});
+SPR.castle=mkSpr([
+    '############',
+    '#..........#',
+    '#..##..##..#',
+    '#..##..##..#',
+    '#..........#',
+    '#..######..#',
+    '#..######..#',
+    '#..........#',
+    '#..##..##..#',
+    '#..##..##..#',
+    '#..........#',
+    '############'],
+    {'#':'#000000','.':'#8a6a3f'});
 // ---------- suelo pre-renderizado por mapa ----------
 function drawDeco(x,type,c,r,Rm){
   const X=c*CELL,Y=r*CELL,rim=(a,b)=>a+Math.floor(Rm()*(b-a+1));
@@ -1097,14 +1128,14 @@ const TOWERS={
 
 // ---------- datos de enemigos ----------
 const ENEMIES={
-  goblin:{name:'Goblin',hp:26,spd:52,armor:0,bounty:6,leak:1,spr:'e_goblin',color:'#5aa03a',weak:{fire:1.5},resist:{}},
-  orco:{name:'Orco',hp:70,spd:38,armor:1,bounty:11,leak:1,spr:'e_orco',color:'#4a7a3a',weak:{ice:1.5},resist:{physical:0.3}},
-  esqueleto:{name:'Esqueleto',hp:55,spd:46,armor:1,bounty:9,leak:1,undead:true,spr:'e_esqueleto',color:'#e8e8d8',weak:{holy:2},resist:{fire:0.35}},
-  vampiro:{name:'Vampiro',hp:85,spd:50,armor:0,bounty:15,leak:1,undead:true,regen:4,spr:'e_vampiro',color:'#a85ac0',weak:{holy:2},resist:{fire:0.4,poison:0.5}},
-  caballero:{name:'Caballero Oscuro',hp:170,spd:34,armor:4,bounty:20,leak:1,spr:'e_caballero',color:'#b8b8c0',weak:{fire:1.5},resist:{physical:0.35}},
-  brujo:{name:'Brujo',hp:110,spd:36,armor:0,bounty:18,leak:1,spr:'e_brujo',color:'#8a63ff',weak:{poison:1.5,fire:1.25},resist:{lightning:0.65}},
-  golem:{name:'Golem de Piedra',hp:320,spd:20,armor:5,bounty:35,leak:2,spr:'e_golem',color:'#9a7a52',weak:{ice:1.5,lightning:1.25},resist:{fire:0.45,poison:0.5}},
-  dragon:{name:'Dragón Anciano',hp:3200,spd:24,armor:6,bounty:250,leak:5,boss:true,spr:'e_dragon',color:'#e05a3a',weak:{ice:1.5},resist:{fire:0.3,physical:0.35}},
+  goblin:{name:'Goblin',hp:26,spd:52,armor:0,bounty:6,leak:1,spr:'e_goblin',color:'#5aa03a',weak:{fire:1.5},resist:{},xpValue:5},
+  orco:{name:'Orco',hp:70,spd:38,armor:1,bounty:11,leak:1,spr:'e_orco',color:'#4a7a3a',weak:{ice:1.5},resist:{physical:0.3},xpValue:10},
+  esqueleto:{name:'Esqueleto',hp:55,spd:46,armor:1,bounty:9,leak:1,undead:true,spr:'e_esqueleto',color:'#e8e8d8',weak:{holy:2},resist:{fire:0.35},xpValue:8},
+  vampiro:{name:'Vampiro',hp:85,spd:50,armor:0,bounty:15,leak:1,undead:true,regen:4,spr:'e_vampiro',color:'#a85ac0',weak:{holy:2},resist:{fire:0.4,poison:0.5},xpValue:12},
+  caballero:{name:'Caballero Oscuro',hp:170,spd:34,armor:4,bounty:20,leak:1,spr:'e_caballero',color:'#b8b8c0',weak:{fire:1.5},resist:{physical:0.35},xpValue:15},
+  brujo:{name:'Brujo',hp:110,spd:36,armor:0,bounty:18,leak:1,spr:'e_brujo',color:'#8a63ff',weak:{poison:1.5,fire:1.25},resist:{lightning:0.65},xpValue:18},
+  golem:{name:'Golem de Piedra',hp:320,spd:20,armor:5,bounty:35,leak:2,spr:'e_golem',color:'#9a7a52',weak:{ice:1.5,lightning:1.25},resist:{fire:0.45,poison:0.5},xpValue:25},
+  dragon:{name:'Dragón Anciano',hp:3200,spd:24,armor:6,bounty:250,leak:5,boss:true,spr:'e_dragon',color:'#e05a3a',weak:{ice:1.5},resist:{fire:0.3,physical:0.35},xpValue:50},
 };
 
 // ---------- sinergias (fusionan los ataques en uno nuevo) ----------
@@ -1188,7 +1219,7 @@ function burst(x,y,color,n,spd,life,grav){
 }
 function ring(x,y,r0,r1,color){G.fx.push({type:'ring',x,y,r0,r1,color,t:0,dur:0.35});}
 // Semántica v3: orden resist (×(1-res)) → weak (×mult) → armadura; el DOT (burn/poison) resta HP directo y omite resist/weak/armadura por diseño; holyarrow/fusión sagrada ×3 vs no-muerto con weak holy ×2 = ×6 intencional.
-function applyDamage(e,raw,elem,opts){
+function applyDamage(e,raw,elem,opts,shooter){
   if(!e||e.dead||G.phase==='menu')return 0;
   opts=opts||{};
   let dmg=raw*(opts.mult||1);
@@ -1208,10 +1239,10 @@ function applyDamage(e,raw,elem,opts){
   }
   burst(e.x,e.y,col,3,22,0.25);
   if(weakF)burst(e.x,e.y,col,2,26,0.3);
-  if(e.hp<=0)killEnemy(e,opts);
+  if(e.hp<=0)killEnemy(e,opts,shooter);
   return dmg;
 }
-function killEnemy(e,opts){
+function killEnemy(e,opts,shooter){
   if(e.dead)return;
   e.dead=true;
   G.kills++;
@@ -1221,6 +1252,11 @@ function killEnemy(e,opts){
   burst(e.x,e.y,e.color,e.boss?26:10,e.boss?60:34,0.5);
   if(e.boss){ring(e.x,e.y,4,40,'#ffb340');SFX.boom();}
   SFX.kill();
+  if(shooter&&!shooter.dead){
+    const xpGain=e.xpValue||5;
+    shooter.xp=(shooter.xp||0)+xpGain;
+    addFloat(shooter.x,shooter.y-14,'XP +'+xpGain,'#ffe08a');
+  }
   if((e.poisonDot>0)&&!(opts&&opts.noPoisonBoom)){
     // detona por veneno: nube en área
     ring(e.x,e.y,2,24,'#7ac74a');
@@ -1321,7 +1357,7 @@ function placeTower(type,c,r){
     id:G.uid++, type, elem:d.elem, c, r,
     x:c*CELL+8, y:r*CELL+8,
     lvl:1, cd:0, novaT:0, angle:0,
-    invested:d.cost, syn:[], seed:Math.random()*10,
+    invested:d.cost, syn:[], xp:0, xpNeeded:20, seed:Math.random()*10,
   };
   G.towers.push(t);
   computeSynergies();
@@ -1334,8 +1370,12 @@ function upgradeTower(t){
   const d=TOWERS[t.type];
   if(!t||t.lvl>=3)return false;
   const cost=d.up[t.lvl-1];
+  const needXp=t.xpNeeded||(t.lvl===1?20:40);
   if(G.gold<cost)return false;
+  if((t.xp||0)<needXp){toast('Necesitas más XP','#ffe08a');return false;}
   G.gold-=cost; t.invested+=cost; t.lvl++;
+  t.xp=(t.xp||0)-needXp;
+  t.xpNeeded=t.lvl===2?40:(t.lvl===3?60:t.xpNeeded);
   SFX.up();
   burst(t.x,t.y-6,'#ffd23e',12,30,0.4);
   computeSynergies();
@@ -1435,18 +1475,18 @@ function fireTower(t,e){
       let kind='arrow',elem='physical',opts={float:true},sfx=SFX.shootA;
       if(syn&&syn.id==='bless'){kind='holyarrow';elem='holy';opts={float:true,mult:e.undead?3:1.5};sfx=SFX.zap;}
       else if(syn&&syn.id==='frost'){kind='frostarrow';elem='ice';opts={float:true,slow:{f:0.35,t:1.8}};sfx=SFX.ice;}
-      const mk=(delay)=>G.shots.push({kind,x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:230,dmg:lv.dmg,elem,opts,lvl:t.lvl,t:0,life:1.2,delay});
+      const mk=(delay)=>G.shots.push({kind,x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:230,dmg:lv.dmg,elem,opts,lvl:t.lvl,tower:t,t:0,life:1.2,delay});
       mk(0);
       if(t.lvl>=3)mk(0.07);
       sfx();
       break;}
     case 'fire':{
       if(syn&&syn.id==='comb'){
-        G.shots.push({kind:'toxbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+4,burn:lv.burn,poison:{dps:8,t:3,stacks:1}},lvl:t.lvl,t:0,life:1.6});
+        G.shots.push({kind:'toxbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+4,burn:lv.burn,poison:{dps:8,t:3,stacks:1}},lvl:t.lvl,tower:t,t:0,life:1.6});
       }else if(syn&&syn.id==='ember'){
-        G.shots.push({kind:'volcbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+6,burn:lv.burn,pool:{r:30,dps:9,t:3}},lvl:t.lvl,t:0,life:1.6});
+        G.shots.push({kind:'volcbomb',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:(lv.splash||20)+6,burn:lv.burn,pool:{r:30,dps:9,t:3}},lvl:t.lvl,tower:t,t:0,life:1.6});
       }else{
-        G.shots.push({kind:'fireball',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:lv.splash,burn:lv.burn},lvl:t.lvl,t:0,life:1.6});
+        G.shots.push({kind:'fireball',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:120,dmg:lv.dmg,elem:'fire',opts:{splash:lv.splash,burn:lv.burn},lvl:t.lvl,tower:t,t:0,life:1.6});
       }
       SFX.fire();
       break;}
@@ -1467,14 +1507,14 @@ function fireTower(t,e){
         ring(e.x,e.y,2,22,'#8fd4ff');
         SFX.zap();
       }else if(syn&&syn.id==='necrosis'){
-        G.shots.push({kind:'necroshard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow,poison:{dps:6,t:3,stacks:1}},lvl:t.lvl,t:0,life:1.4});
+        G.shots.push({kind:'necroshard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow,poison:{dps:6,t:3,stacks:1}},lvl:t.lvl,tower:t,t:0,life:1.4});
         SFX.ice();
       }else if(syn&&syn.id==='frost'){
         // Lanza Glacial: ralentizante reforzado
-        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:{f:lv.slow.f+0.1,t:lv.slow.t+0.6},lance:true},lvl:t.lvl,t:0,life:1.4});
+        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:{f:lv.slow.f+0.1,t:lv.slow.t+0.6},lance:true},lvl:t.lvl,tower:t,t:0,life:1.4});
         SFX.ice();
       }else{
-        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow},lvl:t.lvl,t:0,life:1.4});
+        G.shots.push({kind:'shard',x:t.x,y:t.y-8,tx:e.x,ty:e.y,target:e,spd:180,dmg:lv.dmg,elem:'ice',opts:{slow:lv.slow},lvl:t.lvl,tower:t,t:0,life:1.4});
         SFX.ice();
       }
       break;}
@@ -1515,19 +1555,19 @@ function fireTower(t,e){
       let kind='vial',opts={poison:lv.poison,splash:lv.splash||0};
       if(syn&&syn.id==='comb'){opts.burn={dps:6,t:3};} // Nube Incendiaria
       else if(syn&&syn.id==='necrosis'){kind='frostvial';opts.slow={f:0.35,t:1.8};opts.frostBoom=true;} // Vial Glacial
-      G.shots.push({kind,x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,target:e,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts,lvl:t.lvl,h0:14});
+      G.shots.push({kind,x:t.x,y:t.y-8,sx:t.x,sy:t.y-8,tx:p.x,ty:p.y,target:e,spd:0,t:0,t0:0.55,dmg:lv.dmg,elem:'poison',opts,lvl:t.lvl,tower:t,h0:14});
       SFX.poison();
       break;}
     case 'siege':{
       const p=leadPos(e,0.8);
       const ember=!!(syn&&syn.id==='ember'); // Roca Ígnea
-      G.shots.push({kind:'rock',x:t.x,y:t.y-10,sx:t.x,sy:t.y-10,tx:p.x,ty:p.y,t:0,t0:0.8,dmg:lv.dmg,elem:'siege',opts:{splash:lv.splash,kb:lv.kb,ember,burn:ember?{dps:6,t:3.5}:undefined},lvl:t.lvl,h0:22});
+      G.shots.push({kind:'rock',x:t.x,y:t.y-10,sx:t.x,sy:t.y-10,tx:p.x,ty:p.y,t:0,t0:0.8,dmg:lv.dmg,elem:'siege',opts:{splash:lv.splash,kb:lv.kb,ember,burn:ember?{dps:6,t:3.5}:undefined},lvl:t.lvl,tower:t,h0:22});
       tone(120,0.15,'triangle',0.07,-40);
       break;}
     case 'holy':{
       const bless=!!(syn&&syn.id==='bless'); // Juicio Radiante
       const mult=e.undead?(bless?3:(t.lvl>=3?2.5:2)):(bless?1.5:1);
-      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:bless?260:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:bless?20:(lv.splash||0),stun:bless?0.4:0},lvl:t.lvl,t:0,life:1.4});
+      G.shots.push({kind:'orb',x:t.x,y:t.y-10,tx:e.x,ty:e.y,target:e,spd:bless?260:200,dmg:lv.dmg,elem:'holy',opts:{mult,splash:bless?20:(lv.splash||0),stun:bless?0.4:0},lvl:t.lvl,tower:t,t:0,life:1.4});
       SFX.holy();
       break;}
   }
@@ -1546,7 +1586,7 @@ function updateTower(t,dt){
         let da=Math.atan2(dy,dx)-t.angle;
         while(da>Math.PI)da-=Math.PI*2; while(da<-Math.PI)da+=Math.PI*2;
         if(Math.abs(da)<=0.55){
-          applyDamage(e,55*dt,'fire',{armor:false,float:false});
+          applyDamage(e,55*dt,'fire',{armor:false,float:false},t);
           e.burnDps=Math.max(e.burnDps,14); e.burnT=Math.max(e.burnT,1.2);
           if(e.hp<=0)killEnemy(e);
         }
@@ -1571,7 +1611,7 @@ function updateTower(t,dt){
         for(const e of G.enemies){
           if(e.dead||e.leaked)continue;
           if(Math.hypot(e.x-t.x,e.y-t.y)<=lv.nova.r){
-            applyDamage(e,lv.nova.dmg,'ice',{armor:false});
+            applyDamage(e,lv.nova.dmg,'ice',{armor:false},t);
             e.freeze=Math.max(e.freeze,lv.nova.freeze);
             applySlow(e,lv.slow.f,lv.slow.t);
           }
@@ -1641,7 +1681,7 @@ function impact(s){
   const L=s.lvl||1; // escalado visual por nivel de torre
   if(s.kind==='arrow'||s.kind==='holyarrow'||s.kind==='frostarrow'){
     const tx=s.target?s.target.x:s.x, ty=s.target?s.target.y:s.y;
-    if(s.target&&!s.target.dead)applyDamage(s.target,s.dmg,elem,{mult:o.mult});
+    if(s.target&&!s.target.dead)applyDamage(s.target,s.dmg,elem,{mult:o.mult},s.tower);
     if(o.slow&&s.target&&!s.target.dead)applySlow(s.target,o.slow.f,o.slow.t);
     const bc=s.kind==='holyarrow'?'#ffe08a':s.kind==='frostarrow'?'#b8ecff':(L>=3?'#ffd23e':'#e8e8d8');
     burst(tx,ty,bc,L+1,22,0.2);
@@ -1659,7 +1699,7 @@ function impact(s){
     for(const e of G.enemies){
       if(e.dead||e.leaked)continue;
       if(Math.hypot(e.x-x,e.y-y)<=(o.splash||20)){
-        applyDamage(e,s.dmg,'fire');
+        applyDamage(e,s.dmg,'fire',{},s.tower);
         if(o.burn&&!e.dead)applyBurn(e,o.burn.dps,o.burn.t);
         if(o.poison&&!e.dead)applyPoison(e,o.poison.dps,o.poison.t,o.poison.stacks,1);
       }
@@ -1669,7 +1709,7 @@ function impact(s){
   }
   if(s.kind==='shard'||s.kind==='necroshard'){
     if(s.target&&!s.target.dead){
-      applyDamage(s.target,s.dmg,'ice');
+      applyDamage(s.target,s.dmg,'ice',{},s.tower);
       if(o.slow&&!s.target.dead)applySlow(s.target,o.slow.f,o.slow.t);
       if(o.poison&&!s.target.dead)applyPoison(s.target,o.poison.dps,o.poison.t,o.poison.stacks,1);
     }
@@ -1680,7 +1720,7 @@ function impact(s){
   if(s.kind==='vial'||s.kind==='frostvial'){
     const col=s.kind==='frostvial'?'#8fd4ff':'#7ac74a';
     const hit=(e)=>{
-      applyDamage(e,s.dmg,'poison');
+      applyDamage(e,s.dmg,'poison',{},s.tower);
       if(!e.dead){
         if(o.poison)applyPoison(e,o.poison.dps,o.poison.t,o.poison.stacks,1);
         if(o.burn)applyBurn(e,o.burn.dps,o.burn.t);
@@ -1718,7 +1758,7 @@ function impact(s){
     for(const e of G.enemies){
       if(e.dead||e.leaked)continue;
       if(Math.hypot(e.x-x,e.y-y)<=(o.splash||24)){
-        applyDamage(e,s.dmg,'siege');
+        applyDamage(e,s.dmg,'siege',{},s.tower);
         if(o.kb&&!e.dead){e.dist=Math.max(0,e.dist-o.kb);const p=pointAt(e.dist);e.x=p.x;e.y=p.y;}
         if(o.burn&&!e.dead)applyBurn(e,o.burn.dps,o.burn.t);
       }
@@ -1730,7 +1770,7 @@ function impact(s){
     ring(x,y,1+L,8+3*L,'#ffe08a');
     burst(x,y,'#ffe08a',5+3*L,30,0.3);
     const hito=(e)=>{
-      applyDamage(e,s.dmg,o.elem,{mult:o.mult});
+      applyDamage(e,s.dmg,o.elem,{mult:o.mult},s.tower);
       if(o.stun&&!e.dead)e.freeze=Math.max(e.freeze,o.stun);
     };
     for(const e of G.enemies){
@@ -1867,7 +1907,7 @@ function drawTower(t){
   ctx.fillStyle=shade(base,-0.35);
   ctx.fillRect(wx,baseY-2,ww,2);
   // cara superior: sprite actual
-  ctx.drawImage(spr,t.x-8,spriteTop);
+  safeDraw(spr,t.x-8,spriteTop);
   for(let i=0;i<t.lvl;i++){
     ctx.fillStyle='#ffd23e';
     ctx.fillRect(t.x-6+i*4,baseY-4,2,2);
@@ -1903,7 +1943,7 @@ function drawEnemy(e){
   ctx.fillRect(bx,by,bw,big?2:1);
   if(big)ctx.fillRect(bx,by-1,bw,1);
   // sprite
-  ctx.drawImage(spr,sx,sy);
+  safeDraw(spr,sx,sy);
   // B4: brillo superior sutil (1px más claro en la cara, solo donde hay píxel de sprite)
   try{
     const sd=spr.getContext('2d').getImageData(0,0,w,h).data;
@@ -2107,7 +2147,7 @@ function draw(){
   // entidades ordenadas por profundidad
   const ents=[...G.towers.map(t=>({y:t.y+13,f:()=>drawTower(t)})),...G.enemies.map(e=>({y:e.y+6,f:()=>drawEnemy(e)}))];
   ents.sort((a,b)=>a.y-b.y);
-  for(const e of ents)e.f();
+  for(const e of ents){try{e.f();}catch(err){console.error('draw entity error:',err.message);}}
   // proyectiles
   for(const s of G.shots)drawShot(s);
   // efectos
@@ -2208,7 +2248,7 @@ function buildShop(){
     el.className='card'; el.dataset.t=k;
     const cn=document.createElement('canvas'); cn.width=40; cn.height=40;
     const cx=cn.getContext('2d'); cx.imageSmoothingEnabled=false;
-    cx.drawImage(SPR['t_'+k+'_1'],0,0,16,16,2,2,36,36);
+    safeDraw(cx,SPR['t_'+k+'_1'],2,2);
     el.appendChild(cn);
     const nm=document.createElement('div');
     const n1=document.createElement('div'); n1.className='nm'; n1.textContent=(i+1)+'. '+d.name;
@@ -2244,7 +2284,7 @@ function updateWavePreview(){
     const cn=document.createElement('canvas'); cn.width=16; cn.height=16;
     const cx=cn.getContext('2d'); cx.imageSmoothingEnabled=false;
     const spr=SPR['e_'+g[0]];
-    cx.drawImage(spr[0]||spr,0,0,spr[0]?spr[0].width:spr.width,spr[0]?spr[0].height:spr.height,0,0,16,16);
+    safeDraw(cx,spr[0]||spr,0,0);
     row.appendChild(cn);
     const sp=document.createElement('span');
     sp.className='cnt'+(ENEMIES[g[0]].boss?' boss':'');
@@ -2276,7 +2316,7 @@ function updateSel(){
       const cn=document.createElement('canvas'); cn.width=32; cn.height=32; cn.className='lvpv';
       cn.title='Aspecto al nivel '+(t.lvl+1);
       const cx2=cn.getContext('2d'); cx2.imageSmoothingEnabled=false;
-      cx2.drawImage(SPR['t_'+t.type+'_'+(t.lvl+1)],0,0,16,16,0,0,32,32);
+      safeDraw(cx2,SPR['t_'+t.type+'_'+(t.lvl+1)],0,0);
       bar.appendChild(cn);
     }
     const syn=add('<span class="st">Sinergias: </span>');
@@ -2294,11 +2334,20 @@ function updateSel(){
       syn.innerHTML='<span class="st">Ninguna activa (acerca torres compatibles)</span>';
     }
     if(t.lvl<3){
+      const xpCur=t.xp||0, xpNeed=t.xpNeeded||20;
+      const pct=clamp(xpCur/xpNeed,0,1);
+      add('<span class="st">XP: <b>'+xpCur+'/'+xpNeed+'</b></span>');
+      const xpBar=document.createElement('div');
+      xpBar.style.cssText='width:110px;height:5px;background:#1a1428;border:1px solid #3a3054;margin:2px 0;overflow:hidden;';
+      const xpFill=document.createElement('div');
+      xpFill.style.cssText='width:'+(pct*100)+'%;height:100%;background:#ffe08a;';
+      xpBar.appendChild(xpFill);
+      bar.appendChild(xpBar);
       const cost=d.up[t.lvl-1];
       const btn=document.createElement('button');
       btn.className='ibtn go'; btn.dataset.act='up';
       btn.textContent='MEJORAR ('+cost+' oro) [U]';
-      btn.disabled=G.gold<cost;
+      btn.disabled=G.gold<cost||(t.xp||0)<xpNeed;
       bar.appendChild(btn);
     }
     const bs=document.createElement('button');
