@@ -1145,6 +1145,7 @@ function burst(x,y,color,n,spd,life,grav){
   }
 }
 function ring(x,y,r0,r1,color){G.fx.push({type:'ring',x,y,r0,r1,color,t:0,dur:0.35});}
+// Semántica v3: orden resist (×(1-res)) → weak (×mult) → armadura; el DOT (burn/poison) resta HP directo y omite resist/weak/armadura por diseño; holyarrow/fusión sagrada ×3 vs no-muerto con weak holy ×2 = ×6 intencional.
 function applyDamage(e,raw,elem,opts){
   if(!e||e.dead||G.phase==='menu')return 0;
   opts=opts||{};
@@ -2330,8 +2331,8 @@ function menuHTML(){
     ' + '+{physical:'arquera',poison:'náusea',fire:'ígnea',ice:'glacial',lightning:'tempestad',siege:'catapulta',holy:'sagrada'}[s.b]+
     '): '+s.desc+'</div>').join('');
   const maps=G.maps.map((m,i)=>
-    '<div class="mapc'+(i===G.mapSel?' on':'')+'" data-act="map" data-i="'+i+'"><b>'+m.name+'</b> <span class="stars">'+'★'.repeat(m.stars)+'</span><br>'+
-    '<span class="md">'+m.desc+'</span></div>'
+    '<div class="mapc'+(i===G.mapSel?' on':'')+'" data-act="map" data-i="'+i+'"><b>'+esc(m.name)+'</b> <span class="stars">'+'★'.repeat(m.stars)+'</span><br>'+
+    '<span class="md">'+esc(m.desc)+'</span></div>'
   ).join('');
   return '<div class="opanel">'+
     '<div class="big">TORRE<br>ELEMENTAL</div>'+
@@ -2346,7 +2347,7 @@ function menuHTML(){
     '<div class="lb" id="lb"><h3>MEJORES HÉROES</h3><div style="color:var(--dim)">Cargando top 10…</div></div>'+
     '</div>'+
     bestiaryHTML()+
-    '<button class="btn" data-act="play">▶ JUGAR — <span id="mapname">'+G.maps[G.mapSel].name+'</span></button>'+
+    '<button class="btn" data-act="play">▶ JUGAR — <span id="mapname">'+esc(G.maps[G.mapSel].name)+'</span></button>'+
   '</div>';
 }
 function overHTML(){
@@ -2361,10 +2362,10 @@ function winHTML(){
   const map=(G.maps[G.mapSel]||{}).name||'?';
   return '<div class="opanel">'+
   '<div class="big">¡VICTORIA!<br style="color:#ffe08a">El reino está a salvo</div>'+
-  '<div class="stat">Completaste las <b style="color:#8fd4ff">18 oleadas</b> en <b style="color:#e8d8a0">'+map+'</b><br>'+
+  '<div class="stat">Completaste las <b style="color:#8fd4ff">18 oleadas</b> en <b style="color:#e8d8a0">'+esc(map)+'</b><br>'+
   'Bajas: <b style="color:#a8e05a">'+G.kills+'</b> · Oro ganado: <b style="color:#ffd23e">'+G.goldEarned+'</b><br>'+
   'Vidas restantes: <b style="color:#ff7a6a">'+G.lives+'</b> · Puntuación: <b style="color:var(--gold-hi)">'+finalScore()+'</b></div>'+
-  '<div><input id="pname" maxlength="14" placeholder="Tu nombre, campeón" value="'+(G.lastName||'')+'"></div>'+
+  '<div><input id="pname" maxlength="14" placeholder="Tu nombre, campeón" value="'+esc(G.lastName||'')+'"></div>'+
   '<button class="btn" data-act="submit">✦ GUARDAR PUNTUACIÓN</button>'+
   '<button class="btn" data-act="retry" style="margin-top:-6px">↻ JUGAR OTRA VEZ</button>'+
   '</div>';

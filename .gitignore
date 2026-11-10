@@ -5,9 +5,6 @@
 node_modules/
 npm-debug.log*
 
-# Datos de runtime (persisten en volumen Docker, nunca en el repo)
-scores.json
-
 # Logs
 *.log
 logs/
